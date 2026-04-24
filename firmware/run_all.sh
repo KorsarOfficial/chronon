@@ -32,6 +32,12 @@ run_test test1 "R0=00000037"
 # test2: bubble sort + sum=40 + fact(6)=720, R0=(40<<16)|720, R1=arr[0]=1, R2=arr[7]=9
 run_test test2 "R0=002802d0 R1=00000001 R2=00000009"
 
+# test3: UART printf, UDIV 42/7=6, MUL 42*7=294
+run_test test3 "R0=00000006 R1=00000126"
+
+# test4: SysTick+NVIC — 5 ticks via interrupt handler
+run_test test4 "R0=00000005"
+
 echo ""
 echo "===== $PASS passed, $FAIL failed ====="
 [ $FAIL -eq 0 ]

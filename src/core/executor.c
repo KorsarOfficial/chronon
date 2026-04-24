@@ -333,6 +333,12 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
         }
         case OP_BX: {
             u32 t = c->r[i->rm];
+            /* EXC_RETURN values have bits[31:28] = 1111. Trigger exception exit. */
+            if ((t & 0xFFFFFFF0u) == 0xFFFFFFF0u && c->mode == MODE_HANDLER) {
+                extern bool exc_return(cpu_t*, bus_t*, u32);
+                if (exc_return(c, bus, t)) { return true; }
+                c->halted = true; return false;
+            }
             /* Cortex-M stays in Thumb; LSB must be 1 per ARM ARM B1.4.1. */
             next_pc = t & ~1u;
             break;
@@ -922,6 +928,78 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
 
         case OP_T32_NOP:
             break;
+
+        /* === T32 multiply / divide === */
+        case OP_T32_MUL: {
+            c->r[i->rd] = c->r[i->rn] * c->r[i->rm];
+            break;
+        }
+        case OP_T32_MLA: {
+            c->r[i->rd] = c->r[i->rn] * c->r[i->rm] + c->r[i->rs];
+            break;
+        }
+        case OP_T32_MLS: {
+            c->r[i->rd] = c->r[i->rs] - c->r[i->rn] * c->r[i->rm];
+            break;
+        }
+        case OP_T32_UMULL: {
+            u64 p = (u64)c->r[i->rn] * (u64)c->r[i->rm];
+            c->r[i->rd] = (u32)(p & 0xFFFFFFFFu);  /* RdLo */
+            c->r[i->rs] = (u32)(p >> 32);           /* RdHi */
+            break;
+        }
+        case OP_T32_SMULL: {
+            i64 p = (i64)(i32)c->r[i->rn] * (i64)(i32)c->r[i->rm];
+            c->r[i->rd] = (u32)((u64)p & 0xFFFFFFFFu);
+            c->r[i->rs] = (u32)((u64)p >> 32);
+            break;
+        }
+        case OP_T32_UMLAL: {
+            u64 acc = ((u64)c->r[i->rs] << 32) | c->r[i->rd];
+            u64 p   = (u64)c->r[i->rn] * (u64)c->r[i->rm];
+            u64 r   = acc + p;
+            c->r[i->rd] = (u32)(r & 0xFFFFFFFFu);
+            c->r[i->rs] = (u32)(r >> 32);
+            break;
+        }
+        case OP_T32_SMLAL: {
+            u64 acc = ((u64)c->r[i->rs] << 32) | c->r[i->rd];
+            i64 p   = (i64)(i32)c->r[i->rn] * (i64)(i32)c->r[i->rm];
+            u64 r   = acc + (u64)p;
+            c->r[i->rd] = (u32)(r & 0xFFFFFFFFu);
+            c->r[i->rs] = (u32)(r >> 32);
+            break;
+        }
+        case OP_T32_UDIV: {
+            u32 b = c->r[i->rm];
+            c->r[i->rd] = b ? (c->r[i->rn] / b) : 0u;
+            break;
+        }
+        case OP_T32_SDIV: {
+            i32 b = (i32)c->r[i->rm];
+            if (b == 0) c->r[i->rd] = 0;
+            else if (b == -1 && c->r[i->rn] == 0x80000000u) c->r[i->rd] = 0x80000000u;
+            else c->r[i->rd] = (u32)((i32)c->r[i->rn] / b);
+            break;
+        }
+
+        /* === Table branch byte / halfword === */
+        case OP_T32_TBB: {
+            addr_t base = (i->rn == REG_PC) ? (c->r[REG_PC] + 4) : c->r[i->rn];
+            addr_t idx  = base + c->r[i->rm];
+            u32 v = 0;
+            if (!bus_read(bus, idx, 1, &v)) { c->halted = true; return false; }
+            next_pc = c->r[REG_PC] + 4 + (v * 2);
+            break;
+        }
+        case OP_T32_TBH: {
+            addr_t base = (i->rn == REG_PC) ? (c->r[REG_PC] + 4) : c->r[i->rn];
+            addr_t idx  = base + (c->r[i->rm] << 1);
+            u32 v = 0;
+            if (!bus_read(bus, idx, 2, &v)) { c->halted = true; return false; }
+            next_pc = c->r[REG_PC] + 4 + (v * 2);
+            break;
+        }
 
         default:
             c->halted = true;

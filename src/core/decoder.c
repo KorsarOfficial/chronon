@@ -537,7 +537,8 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
     }
 
     /* === Data processing (register) — A5.3.11 ===
-       w0[15:9]=1110101 */
+       w0[15:9] = 1110101 covers both 0xEA__ and 0xEB__.
+       op4 = w0[8:5] is 4-bit opcode. */
     if ((w0 & 0xFE00u) == 0xEA00u) {
         u32 op4 = (w0 >> 5) & 0xF;
         u32 S   = (w0 >> 4) & 1;
@@ -554,38 +555,69 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
         out->shift_n = (u8)((imm3 << 2) | imm2);
 
         switch (op4) {
-            case 0: out->op = (Rd == 15 && S) ? OP_T32_TST_REG : OP_T32_AND_REG; break;
-            case 1: out->op = OP_T32_BIC_REG; break;
-            case 2: out->op = (Rn == 15) ? OP_T32_MOV_REG : OP_T32_ORR_REG; break;
-            case 3: out->op = (Rn == 15) ? OP_T32_MVN_REG : OP_T32_ORN_REG; break;
-            case 4: out->op = (Rd == 15 && S) ? OP_T32_TEQ_REG : OP_T32_EOR_REG; break;
-            default: break;
-        }
-        return 4;
-    }
-    if ((w0 & 0xFE00u) == 0xEB00u) {
-        u32 op4 = (w0 >> 5) & 0xF;
-        u32 S   = (w0 >> 4) & 1;
-        u32 Rn  = w0 & 0xF;
-        u32 imm3 = (w1 >> 12) & 0x7;
-        u32 Rd   = (w1 >> 8) & 0xF;
-        u32 imm2 = (w1 >> 6) & 0x3;
-        u32 typ  = (w1 >> 4) & 0x3;
-        u32 Rm   = w1 & 0xF;
-
-        out->rn = (u8)Rn; out->rd = (u8)Rd; out->rm = (u8)Rm;
-        out->set_flags = S != 0;
-        out->shift_type = (u8)typ;
-        out->shift_n = (u8)((imm3 << 2) | imm2);
-
-        switch (op4) {
-            case 0:  out->op = (Rd == 15 && S) ? OP_T32_CMN_REG : OP_T32_ADD_REG; break;
-            case 2:  out->op = OP_T32_ADC_REG; break;
-            case 3:  out->op = OP_T32_SBC_REG; break;
+            case 0:  out->op = (Rd == 15 && S) ? OP_T32_TST_REG : OP_T32_AND_REG; break;
+            case 1:  out->op = OP_T32_BIC_REG; break;
+            case 2:  out->op = (Rn == 15) ? OP_T32_MOV_REG : OP_T32_ORR_REG; break;
+            case 3:  out->op = (Rn == 15) ? OP_T32_MVN_REG : OP_T32_ORN_REG; break;
+            case 4:  out->op = (Rd == 15 && S) ? OP_T32_TEQ_REG : OP_T32_EOR_REG; break;
+            case 8:  out->op = (Rd == 15 && S) ? OP_T32_CMN_REG : OP_T32_ADD_REG; break;
+            case 10: out->op = OP_T32_ADC_REG; break;
+            case 11: out->op = OP_T32_SBC_REG; break;
             case 13: out->op = (Rd == 15 && S) ? OP_T32_CMP_REG : OP_T32_SUB_REG; break;
             case 14: out->op = OP_T32_RSB_REG; break;
             default: break;
         }
+        return 4;
+    }
+
+    /* === 32-bit multiply / multiply-accumulate / divide — A5.3.17 / A5.3.18 ===
+       Multiply (4-op): w0[15:4] = 1111 1011 0xxx, w1[15:4] = 1111 op4 Rd
+       Long multiply:  w0[15:4] = 1111 1011 1xxx */
+    if ((w0 & 0xFF80u) == 0xFB00u) {
+        u32 op1 = (w0 >> 4) & 0x7;
+        u32 Rn  = w0 & 0xF;
+        u32 Ra  = (w1 >> 12) & 0xF;
+        u32 Rd  = (w1 >> 8) & 0xF;
+        u32 op2 = (w1 >> 4) & 0xF;
+        u32 Rm  = w1 & 0xF;
+        out->rn = (u8)Rn; out->rm = (u8)Rm; out->rd = (u8)Rd; out->rs = (u8)Ra;
+
+        if (op1 == 0 && op2 == 0) {
+            out->op = (Ra == 15) ? OP_T32_MUL : OP_T32_MLA;
+            return 4;
+        }
+        if (op1 == 0 && op2 == 1) { out->op = OP_T32_MLS; return 4; }
+        return 4;
+    }
+    if ((w0 & 0xFF80u) == 0xFB80u) {
+        u32 op1 = (w0 >> 4) & 0x7;
+        u32 Rn  = w0 & 0xF;
+        u32 RdLo = (w1 >> 12) & 0xF;
+        u32 RdHi = (w1 >> 8) & 0xF;
+        u32 op2  = (w1 >> 4) & 0xF;
+        u32 Rm   = w1 & 0xF;
+        out->rn = (u8)Rn; out->rm = (u8)Rm;
+        out->rd = (u8)RdLo; out->rs = (u8)RdHi;
+
+        switch (op1) {
+            case 0: out->op = OP_T32_SMULL; return 4;
+            case 1: if (op2 == 0xF) { out->op = OP_T32_SDIV; return 4; } break;
+            case 2: out->op = OP_T32_UMULL; return 4;
+            case 3: if (op2 == 0xF) { out->op = OP_T32_UDIV; return 4; } break;
+            case 4: out->op = OP_T32_SMLAL; return 4;
+            case 6: out->op = OP_T32_UMLAL; return 4;
+            default: break;
+        }
+        return 4;
+    }
+
+    /* === TBB / TBH — A5.3.7 ===
+       w0 = 1110 1000 1101 Rn, w1 = 1111 0000 000 H Rm
+       H=0 TBB (byte), H=1 TBH (halfword) */
+    if ((w0 & 0xFFF0u) == 0xE8D0u && (w1 & 0xFFE0u) == 0xF000u) {
+        out->rn = (u8)(w0 & 0xF);
+        out->rm = (u8)(w1 & 0xF);
+        out->op = (w1 & 0x10) ? OP_T32_TBH : OP_T32_TBB;
         return 4;
     }
 

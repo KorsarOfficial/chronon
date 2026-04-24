@@ -5,8 +5,10 @@
 #include "core/cpu.h"
 #include "core/bus.h"
 #include "core/decoder.h"
+#include "periph/uart.h"
+#include "periph/systick.h"
 
-extern u64 run_steps(cpu_t* c, bus_t* bus, u64 max_steps);
+extern u64 run_steps_st(cpu_t* c, bus_t* bus, u64 max_steps, systick_t* st);
 
 /* Cortex-M memory layout defaults (ARM ARM B3):
    Flash   0x00000000 - 0x1FFFFFFF
@@ -47,6 +49,10 @@ int main(int argc, char** argv) {
     bus_t bus; bus_init(&bus);
     bus_add_flat(&bus, "flash", FLASH_BASE, FLASH_SIZE, false);
     bus_add_flat(&bus, "sram",  SRAM_BASE,  SRAM_SIZE,  true);
+    static uart_t uart0 = {0};
+    uart_attach(&bus, &uart0);
+    static systick_t systick = {0};
+    systick_attach(&bus, &systick);
     bus_load_blob(&bus, FLASH_BASE, blob, sz);
     free(blob);
 
@@ -58,7 +64,7 @@ int main(int argc, char** argv) {
     u32 entry = bus_r32(&bus, 0x4) & ~1u;
     cpu.r[REG_PC] = entry ? entry : FLASH_BASE;
 
-    u64 n = run_steps(&cpu, &bus, max_steps);
+    u64 n = run_steps_st(&cpu, &bus, max_steps, &systick);
 
     fprintf(stderr, "halted after %llu instructions\n", (unsigned long long)n);
     fprintf(stderr, "R0=%08x R1=%08x R2=%08x R3=%08x\n",

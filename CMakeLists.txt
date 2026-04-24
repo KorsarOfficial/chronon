@@ -29,7 +29,10 @@ set(CORE_SRC
     src/core/bus.c
     src/core/decoder.c
     src/core/executor.c
+    src/core/nvic.c
     src/core/run.c
+    src/periph/uart.c
+    src/periph/systick.c
 )
 
 add_library(cortex_m_core STATIC ${CORE_SRC})

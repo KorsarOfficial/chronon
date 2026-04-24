@@ -80,6 +80,15 @@ typedef enum {
     OP_T32_MSR, OP_T32_MRS,
     OP_T32_NOP,
 
+    /* Multiply / divide (T32) */
+    OP_T32_MUL,    OP_T32_MLA,    OP_T32_MLS,
+    OP_T32_UMULL,  OP_T32_SMULL,
+    OP_T32_UMLAL,  OP_T32_SMLAL,
+    OP_T32_UDIV,   OP_T32_SDIV,
+
+    /* Table-branch byte/halfword */
+    OP_T32_TBB,    OP_T32_TBH,
+
     /* IT block (16-bit but advanced state machine) */
     OP_T32_IT,
 
