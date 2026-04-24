@@ -35,19 +35,18 @@ int systick_attach(bus_t* b, systick_t* t) {
 void systick_tick(systick_t* t, u32 cycles) {
     if (!(t->csr & 1u)) return; /* disabled */
     u32 cvr = t->cvr;
+    /* On enable transition, cvr is still 0 by spec; first reload is from RVR.
+       To avoid an immediate IRQ storm before firmware sets up PSP, we only
+       raise IRQ when cvr was > 0 and reached 0 through counting. */
+    if (cvr == 0) cvr = t->rvr;
     while (cycles) {
-        if (cvr == 0) {
-            /* Reload from RVR */
+        if (cvr == 0) break; /* RVR = 0: stopped */
+        if (cycles >= cvr) {
+            cycles -= cvr;
             cvr = t->rvr;
             t->count_flag = true;
             if (t->csr & 2u) t->irq_pending = true;
-            if (cvr == 0) break; /* infinite */
-            cycles--;
-            continue;
-        }
-        if (cycles >= cvr) {
-            cycles -= cvr;
-            cvr = 0;
+            if (cvr == 0) break;
         } else {
             cvr -= cycles;
             cycles = 0;

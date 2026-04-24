@@ -1,6 +1,18 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include "core/cpu.h"
 #include "core/bus.h"
 #include "core/decoder.h"
+
+/* Set EMU_TRACE=1 env var to enable SVC/PendSV trace. */
+static int trace_on(void) {
+    static int v = -1;
+    if (v < 0) {
+        const char* s = getenv("EMU_TRACE");
+        v = (s && s[0] && s[0] != '0') ? 1 : 0;
+    }
+    return v;
+}
 
 /* Condition code evaluation. ARM ARM A7.3. */
 static bool cond_pass(u32 apsr, u8 cond) {
@@ -305,9 +317,12 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
             c->halted = true;
             return false;
 
-        case OP_SVC:
-            c->halted = true;
+        case OP_SVC: {
+            c->r[REG_PC] = next_pc;
+            extern bool exc_enter(cpu_t*, bus_t*, u8);
+            if (!exc_enter(c, bus, 11)) { c->halted = true; return false; }
             return true;
+        }
 
         /* === Hi-register operations === */
         case OP_ADD_REG_T2: {
@@ -516,19 +531,26 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
         }
         case OP_POP: {
             addr_t sp = c->r[REG_SP];
+            u32 pc_val = 0;
+            bool pop_pc = false;
             for (int k = 0; k < 16; ++k) {
                 if (i->reg_list & (1u << k)) {
                     u32 v = 0;
                     if (!bus_read(bus, sp, 4, &v)) { c->halted = true; return false; }
-                    if (k == 15) {
-                        next_pc = v & ~1u; /* POP PC — interworking */
-                    } else {
-                        c->r[k] = v;
-                    }
+                    if (k == 15) { pop_pc = true; pc_val = v; }
+                    else c->r[k] = v;
                     sp += 4;
                 }
             }
             c->r[REG_SP] = sp;
+            if (pop_pc) {
+                if ((pc_val & 0xFFFFFFF0u) == 0xFFFFFFF0u && c->mode == MODE_HANDLER) {
+                    extern bool exc_return(cpu_t*, bus_t*, u32);
+                    if (exc_return(c, bus, pc_val)) return true;
+                    c->halted = true; return false;
+                }
+                next_pc = pc_val & ~1u;
+            }
             break;
         }
         case OP_STM: {
@@ -928,6 +950,35 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
 
         case OP_T32_NOP:
             break;
+
+        /* === T32 Load/Store multiple (IA increment-after / DB decrement-before) === */
+        case OP_T32_LDM:
+        case OP_T32_STM: {
+            bool is_load = (i->op == OP_T32_LDM);
+            u32 cnt = 0;
+            for (int k = 0; k < 16; ++k) if (i->reg_list & (1u << k)) cnt++;
+            addr_t base = c->r[i->rn];
+            addr_t a = i->add ? base : (base - cnt * 4);
+            addr_t start = a;
+            for (int k = 0; k < 16; ++k) {
+                if (i->reg_list & (1u << k)) {
+                    if (is_load) {
+                        u32 v = 0;
+                        if (!bus_read(bus, a, 4, &v)) { c->halted = true; return false; }
+                        if (k == 15) next_pc = v & ~1u;
+                        else c->r[k] = v;
+                    } else {
+                        u32 v = (k == 15) ? (c->r[REG_PC] + 4) : c->r[k];
+                        if (!bus_write(bus, a, 4, v)) { c->halted = true; return false; }
+                    }
+                    a += 4;
+                }
+            }
+            if (i->writeback) {
+                c->r[i->rn] = i->add ? a : start;
+            }
+            break;
+        }
 
         /* === T32 multiply / divide === */
         case OP_T32_MUL: {

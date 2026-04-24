@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include "core/cpu.h"
 #include "core/bus.h"
 #include "core/decoder.h"

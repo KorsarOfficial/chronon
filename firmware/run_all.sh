@@ -41,6 +41,9 @@ run_test test4 "R0=00000005"
 # test5: MSR/MRS + PSP switch + PendSV handler chain
 run_test test5 "R0=00000003 R1=20000200 R2=20000200"
 
+# test6: mini-RTOS — 2 tasks, SysTick+PendSV preemptive round-robin scheduler
+run_test test6 "PC=000000aa"
+
 echo ""
 echo "===== $PASS passed, $FAIL failed ====="
 [ $FAIL -eq 0 ]

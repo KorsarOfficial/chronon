@@ -632,6 +632,24 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
         return 4;
     }
 
+    /* === T32 Load/Store multiple — A5.3.5 ===
+       w0[15:9]=1110100. bit[8]=P, bit[7]=U (P,U form IA/DB).
+       IA: P=0, U=1 (0xE88x/0xE89x base)
+       DB: P=1, U=0 (0xE90x/0xE91x base)
+       bit[5]=W (writeback), bit[4]=L (1=load).  w1 = reglist. */
+    if ((w0 & 0xFE40u) == 0xE800u && ((w0 >> 7) & 1) != ((w0 >> 8) & 1)) {
+        u32 W  = (w0 >> 5) & 1;
+        u32 L  = (w0 >> 4) & 1;
+        u32 Rn = w0 & 0xF;
+        u32 P  = (w0 >> 8) & 1;     /* 1 = DB, 0 = IA */
+        out->rn = (u8)Rn;
+        out->reg_list = w1;
+        out->writeback = W != 0;
+        out->add = (P == 0);
+        out->op = L ? OP_T32_LDM : OP_T32_STM;
+        return 4;
+    }
+
     /* === TBB / TBH — A5.3.7 ===
        w0 = 1110 1000 1101 Rn, w1 = 1111 0000 000 H Rm
        H=0 TBB (byte), H=1 TBH (halfword) */
