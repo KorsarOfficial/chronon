@@ -1,0 +1,12 @@
+/build/
+/build-*/
+*.exe
+*.obj
+*.o
+*.a
+*.exp
+*.lib
+*.pdb
+.vs/
+.vscode/
+compile_commands.json

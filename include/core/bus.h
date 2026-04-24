@@ -1,0 +1,61 @@
+#ifndef CORTEX_M_BUS_H
+#define CORTEX_M_BUS_H
+
+#include "core/types.h"
+
+/* Memory bus abstraction. Address space is divided into regions.
+   Each region has either a flat backing buffer (RAM/Flash) or
+   MMIO read/write callbacks (peripherals, NVIC, SCB). */
+
+typedef enum {
+    REGION_FLAT = 0,   /* r[offset], w[offset] direct */
+    REGION_MMIO = 1,   /* callbacks invoked on access */
+} region_kind_t;
+
+typedef struct bus_s bus_t;
+
+typedef u32 (*mmio_read_fn)(void* ctx, addr_t off, u32 size);
+typedef void (*mmio_write_fn)(void* ctx, addr_t off, u32 val, u32 size);
+
+typedef struct region_s {
+    addr_t base;
+    u32    size;
+    region_kind_t kind;
+    bool   writable;
+    /* flat */
+    u8*    buf;
+    /* mmio */
+    void*  ctx;
+    mmio_read_fn  r;
+    mmio_write_fn w;
+    const char* name;
+} region_t;
+
+#define BUS_MAX_REGIONS 32
+
+struct bus_s {
+    region_t regs[BUS_MAX_REGIONS];
+    u32 n;
+};
+
+void bus_init(bus_t* b);
+int  bus_add_flat(bus_t* b, const char* name, addr_t base, u32 size, bool writable);
+int  bus_add_mmio(bus_t* b, const char* name, addr_t base, u32 size,
+                  void* ctx, mmio_read_fn r, mmio_write_fn w);
+
+/* Read/write; size in bytes: 1, 2, 4. Returns false on fault. */
+bool bus_read (bus_t* b, addr_t a, u32 size, u32* out);
+bool bus_write(bus_t* b, addr_t a, u32 size, u32 val);
+
+/* Fast helpers for aligned access on known-flat regions (hot path). */
+u32  bus_r32(bus_t* b, addr_t a);
+u16  bus_r16(bus_t* b, addr_t a);
+u8   bus_r8 (bus_t* b, addr_t a);
+void bus_w32(bus_t* b, addr_t a, u32 v);
+void bus_w16(bus_t* b, addr_t a, u16 v);
+void bus_w8 (bus_t* b, addr_t a, u8  v);
+
+/* Load a firmware blob into a flat region at given address. */
+bool bus_load_blob(bus_t* b, addr_t a, const u8* data, u32 n);
+
+#endif
