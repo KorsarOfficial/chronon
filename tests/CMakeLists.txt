@@ -13,3 +13,7 @@ add_test(NAME bus COMMAND test_bus)
 add_executable(test_memory test_memory.c)
 target_link_libraries(test_memory PRIVATE cortex_m_core)
 add_test(NAME memory COMMAND test_memory)
+
+add_executable(test_t32 test_t32.c)
+target_link_libraries(test_t32 PRIVATE cortex_m_core)
+add_test(NAME t32 COMMAND test_t32)

@@ -62,7 +62,14 @@ typedef struct cpu_s {
     core_t core;
     u64 cycles;       /* instruction counter */
     bool halted;      /* CPU stopped (wfi or sim shutdown) */
+    /* ITSTATE per ARM ARM A7.3.2: 8 bits encoding cond + length. */
+    u8 itstate;
 } cpu_t;
+
+/* IT helpers: extract current cond and step state. */
+FORCE_INLINE bool cpu_in_it(const cpu_t* c) { return (c->itstate & 0x0F) != 0; }
+FORCE_INLINE u8   cpu_it_cond(const cpu_t* c) { return (c->itstate >> 4) & 0xF; }
+void cpu_it_advance(cpu_t* c);
 
 void cpu_reset(cpu_t* c, core_t core);
 u32  cpu_read_reg(const cpu_t* c, u32 n);

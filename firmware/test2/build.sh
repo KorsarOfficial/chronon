@@ -6,7 +6,7 @@ GCC="/c/Program Files (x86)/Arm/GNU Toolchain mingw-w64-i686-arm-none-eabi/bin/a
 OBJCOPY="/c/Program Files (x86)/Arm/GNU Toolchain mingw-w64-i686-arm-none-eabi/bin/arm-none-eabi-objcopy.exe"
 OBJDUMP="/c/Program Files (x86)/Arm/GNU Toolchain mingw-w64-i686-arm-none-eabi/bin/arm-none-eabi-objdump.exe"
 
-CFLAGS="-mcpu=cortex-m0 -mthumb -Os -ffreestanding -nostdlib -fno-exceptions -fno-stack-protector -Wall"
+CFLAGS="-mcpu=cortex-m3 -mthumb -O2 -ffreestanding -nostdlib -fno-exceptions -fno-stack-protector -Wall"
 LDFLAGS="-Wl,--gc-sections -T link.ld -nostartfiles"
 
 "$GCC" $CFLAGS -c startup.s -o startup.o

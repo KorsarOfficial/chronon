@@ -1,5 +1,5 @@
     .syntax unified
-    .cpu cortex-m0
+    .cpu cortex-m3
     .thumb
 
     .section .vectors, "a"

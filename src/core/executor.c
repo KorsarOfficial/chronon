@@ -29,10 +29,75 @@ static bool cond_pass(u32 apsr, u8 cond) {
     return false;
 }
 
+/* Apply Thumb-2 register shift type/amount to value. */
+static u32 t32_shift(u32 v, u8 type, u8 n) {
+    if (n == 0 && type == 0) return v;
+    switch (type & 3) {
+        case 0: return n >= 32 ? 0 : (v << n);                /* LSL */
+        case 1: return n >= 32 ? 0 : (v >> n);                /* LSR */
+        case 2: { i32 sv = (i32)v;
+                  return n >= 32 ? (u32)(sv >> 31) : (u32)(sv >> n); } /* ASR */
+        case 3: return n ? ((v >> n) | (v << (32 - n))) : v;  /* ROR */
+    }
+    return v;
+}
+
+/* Returns true if opcode is a comparison that always updates flags
+   (these still write APSR even inside IT block). */
+static bool op_is_flagsetter(opcode_t op) {
+    switch (op) {
+        case OP_CMP_IMM: case OP_CMP_REG: case OP_CMP_REG_T2:
+        case OP_CMN_REG: case OP_TST_REG:
+        case OP_T32_CMP_IMM: case OP_T32_CMP_REG:
+        case OP_T32_CMN_IMM: case OP_T32_CMN_REG:
+        case OP_T32_TST_IMM: case OP_T32_TST_REG:
+        case OP_T32_TEQ_IMM: case OP_T32_TEQ_REG:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /* Executor: given decoded insn, mutate CPU/bus state. Returns false on fault. */
 bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
     /* Advance PC to next by default; branches override. */
     u32 next_pc = c->r[REG_PC] + i->size;
+
+    /* Inside IT block, save APSR; only comparison ops should write it. */
+    bool in_it = cpu_in_it(c);
+    u32 saved_apsr = c->apsr;
+
+    /* If we're in an IT block and the current condition fails, NOP this insn
+       but still advance the IT state and PC. */
+    if (in_it) {
+        u8 cond = cpu_it_cond(c);
+        bool n = (c->apsr & APSR_N) != 0, z = (c->apsr & APSR_Z) != 0;
+        bool cf = (c->apsr & APSR_C) != 0, vf = (c->apsr & APSR_V) != 0;
+        bool pass;
+        switch (cond & 0xF) {
+            case 0x0: pass = z; break;
+            case 0x1: pass = !z; break;
+            case 0x2: pass = cf; break;
+            case 0x3: pass = !cf; break;
+            case 0x4: pass = n; break;
+            case 0x5: pass = !n; break;
+            case 0x6: pass = vf; break;
+            case 0x7: pass = !vf; break;
+            case 0x8: pass = cf && !z; break;
+            case 0x9: pass = !cf || z; break;
+            case 0xA: pass = n == vf; break;
+            case 0xB: pass = n != vf; break;
+            case 0xC: pass = !z && (n == vf); break;
+            case 0xD: pass = z || (n != vf); break;
+            default:  pass = true; break;
+        }
+        if (!pass) {
+            cpu_it_advance(c);
+            c->r[REG_PC] = next_pc;
+            c->cycles++;
+            return true;
+        }
+    }
 
     switch (i->op) {
         case OP_NOP:
@@ -496,15 +561,381 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
 
         /* === Thumb-2 branch with link === */
         case OP_T32_BL: {
-            /* LR = PC_of_next_insn | 1 (Thumb bit). */
             c->r[REG_LR] = (c->r[REG_PC] + 4) | 1u;
             next_pc = (c->r[REG_PC] + 4 + i->imm) & ~1u;
             break;
         }
+        case OP_T32_B_COND: {
+            /* Cond was already pre-checked? No — T32_B_COND doesn't go through IT.
+               We must evaluate its own cond field here. */
+            u8 cond = i->cond;
+            bool nf = (c->apsr & APSR_N) != 0, zf = (c->apsr & APSR_Z) != 0;
+            bool cf = (c->apsr & APSR_C) != 0, vf = (c->apsr & APSR_V) != 0;
+            bool pass = false;
+            switch (cond) {
+                case 0x0: pass = zf; break;
+                case 0x1: pass = !zf; break;
+                case 0x2: pass = cf; break;
+                case 0x3: pass = !cf; break;
+                case 0x4: pass = nf; break;
+                case 0x5: pass = !nf; break;
+                case 0x6: pass = vf; break;
+                case 0x7: pass = !vf; break;
+                case 0x8: pass = cf && !zf; break;
+                case 0x9: pass = !cf || zf; break;
+                case 0xA: pass = nf == vf; break;
+                case 0xB: pass = nf != vf; break;
+                case 0xC: pass = !zf && (nf == vf); break;
+                case 0xD: pass = zf || (nf != vf); break;
+            }
+            if (pass) next_pc = c->r[REG_PC] + 4 + i->imm;
+            break;
+        }
+
+        /* === IT block setup === */
+        case OP_T32_IT: {
+            c->itstate = (u8)((i->it_first << 4) | i->it_mask);
+            break;
+        }
+
+        /* === T32 modified immediate data-proc === */
+        case OP_T32_AND_IMM: {
+            u32 r = c->r[i->rn] & i->imm;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_BIC_IMM: {
+            u32 r = c->r[i->rn] & ~i->imm;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_ORR_IMM: {
+            u32 r = c->r[i->rn] | i->imm;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_ORN_IMM: {
+            u32 r = c->r[i->rn] | ~i->imm;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_EOR_IMM: {
+            u32 r = c->r[i->rn] ^ i->imm;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_TEQ_IMM: {
+            u32 r = c->r[i->rn] ^ i->imm;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_TST_IMM: {
+            u32 r = c->r[i->rn] & i->imm;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_ADD_IMM: {
+            u32 a = c->r[i->rn], b = i->imm;
+            u32 r = a + b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_add(c, a, b, r, false);
+            break;
+        }
+        case OP_T32_ADC_IMM: {
+            u32 a = c->r[i->rn], b = i->imm;
+            bool ci = (c->apsr & APSR_C) != 0;
+            u32 r = a + b + (ci ? 1u : 0u);
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_add(c, a, b, r, ci);
+            break;
+        }
+        case OP_T32_SBC_IMM: {
+            u32 a = c->r[i->rn], b = i->imm;
+            bool ci = (c->apsr & APSR_C) != 0;
+            u32 nb = ~b;
+            u32 r = a + nb + (ci ? 1u : 0u);
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_add(c, a, nb, r, ci);
+            break;
+        }
+        case OP_T32_SUB_IMM: {
+            u32 a = c->r[i->rn], b = i->imm;
+            u32 r = a - b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_sub(c, a, b, r);
+            break;
+        }
+        case OP_T32_RSB_IMM: {
+            u32 a = i->imm, b = c->r[i->rn];
+            u32 r = a - b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_sub(c, a, b, r);
+            break;
+        }
+        case OP_T32_CMN_IMM: {
+            u32 a = c->r[i->rn], b = i->imm;
+            cpu_set_flags_nzcv_add(c, a, b, a + b, false);
+            break;
+        }
+        case OP_T32_CMP_IMM: {
+            u32 a = c->r[i->rn], b = i->imm;
+            cpu_set_flags_nzcv_sub(c, a, b, a - b);
+            break;
+        }
+        case OP_T32_MOV_IMM: {
+            c->r[i->rd] = i->imm;
+            if (i->set_flags) cpu_set_flags_nz(c, i->imm);
+            break;
+        }
+        case OP_T32_MVN_IMM: {
+            u32 r = ~i->imm;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+
+        /* === T32 plain immediate === */
+        case OP_T32_ADDW: {
+            c->r[i->rd] = c->r[i->rn] + i->imm;
+            break;
+        }
+        case OP_T32_SUBW: {
+            c->r[i->rd] = c->r[i->rn] - i->imm;
+            break;
+        }
+        case OP_T32_MOVW: {
+            c->r[i->rd] = i->imm; /* zero-extended 16-bit */
+            break;
+        }
+        case OP_T32_MOVT: {
+            c->r[i->rd] = (c->r[i->rd] & 0x0000FFFFu) | ((i->imm & 0xFFFF) << 16);
+            break;
+        }
+        case OP_T32_ADR_T2: {
+            /* SUBW Rd, PC, #imm12 — PC-aligned base */
+            c->r[i->rd] = ((c->r[REG_PC] + 4) & ~3u) - i->imm;
+            break;
+        }
+        case OP_T32_ADR_T3: {
+            c->r[i->rd] = ((c->r[REG_PC] + 4) & ~3u) + i->imm;
+            break;
+        }
+
+        /* === T32 register data-proc with shift === */
+        case OP_T32_AND_REG: {
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 r = c->r[i->rn] & b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_BIC_REG: {
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 r = c->r[i->rn] & ~b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_ORR_REG: {
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 r = c->r[i->rn] | b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_ORN_REG: {
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 r = c->r[i->rn] | ~b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_EOR_REG: {
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 r = c->r[i->rn] ^ b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_T32_TEQ_REG: {
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            cpu_set_flags_nz(c, c->r[i->rn] ^ b);
+            break;
+        }
+        case OP_T32_TST_REG: {
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            cpu_set_flags_nz(c, c->r[i->rn] & b);
+            break;
+        }
+        case OP_T32_MOV_REG: {
+            u32 v = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            c->r[i->rd] = v;
+            if (i->set_flags) cpu_set_flags_nz(c, v);
+            break;
+        }
+        case OP_T32_MVN_REG: {
+            u32 v = ~t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            c->r[i->rd] = v;
+            if (i->set_flags) cpu_set_flags_nz(c, v);
+            break;
+        }
+        case OP_T32_ADD_REG: {
+            u32 a = c->r[i->rn];
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 r = a + b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_add(c, a, b, r, false);
+            break;
+        }
+        case OP_T32_ADC_REG: {
+            u32 a = c->r[i->rn];
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            bool ci = (c->apsr & APSR_C) != 0;
+            u32 r = a + b + (ci ? 1u : 0u);
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_add(c, a, b, r, ci);
+            break;
+        }
+        case OP_T32_SBC_REG: {
+            u32 a = c->r[i->rn];
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            bool ci = (c->apsr & APSR_C) != 0;
+            u32 nb = ~b;
+            u32 r = a + nb + (ci ? 1u : 0u);
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_add(c, a, nb, r, ci);
+            break;
+        }
+        case OP_T32_SUB_REG: {
+            u32 a = c->r[i->rn];
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 r = a - b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_sub(c, a, b, r);
+            break;
+        }
+        case OP_T32_RSB_REG: {
+            u32 a = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            u32 b = c->r[i->rn];
+            u32 r = a - b;
+            c->r[i->rd] = r;
+            if (i->set_flags) cpu_set_flags_nzcv_sub(c, a, b, r);
+            break;
+        }
+        case OP_T32_CMN_REG: {
+            u32 a = c->r[i->rn];
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            cpu_set_flags_nzcv_add(c, a, b, a + b, false);
+            break;
+        }
+        case OP_T32_CMP_REG: {
+            u32 a = c->r[i->rn];
+            u32 b = t32_shift(c->r[i->rm], i->shift_type, i->shift_n);
+            cpu_set_flags_nzcv_sub(c, a, b, a - b);
+            break;
+        }
+
+        /* === T32 load/store immediate === */
+        case OP_T32_LDR_IMM:
+        case OP_T32_LDRH_IMM:
+        case OP_T32_LDRB_IMM:
+        case OP_T32_LDRSB_IMM:
+        case OP_T32_LDRSH_IMM:
+        case OP_T32_STR_IMM:
+        case OP_T32_STRH_IMM:
+        case OP_T32_STRB_IMM: {
+            u32 base = c->r[i->rn];
+            u32 off  = i->imm;
+            u32 a    = i->add ? base + off : base - off;
+            addr_t ea = i->index ? a : base;
+            u32 sz = (i->op == OP_T32_LDR_IMM || i->op == OP_T32_STR_IMM) ? 4
+                   : (i->op == OP_T32_LDRH_IMM || i->op == OP_T32_LDRSH_IMM ||
+                      i->op == OP_T32_STRH_IMM) ? 2 : 1;
+            bool is_load = (i->op == OP_T32_LDR_IMM || i->op == OP_T32_LDRH_IMM ||
+                            i->op == OP_T32_LDRB_IMM || i->op == OP_T32_LDRSB_IMM ||
+                            i->op == OP_T32_LDRSH_IMM);
+            if (is_load) {
+                u32 v = 0;
+                if (!bus_read(bus, ea, sz, &v)) { c->halted = true; return false; }
+                if (i->op == OP_T32_LDRSB_IMM) v = (u32)(i32)(i8)(u8)v;
+                else if (i->op == OP_T32_LDRSH_IMM) v = (u32)(i32)(i16)(u16)v;
+                c->r[i->rd] = v;
+            } else {
+                if (!bus_write(bus, ea, sz, c->r[i->rd])) {
+                    c->halted = true; return false;
+                }
+            }
+            if (i->writeback) c->r[i->rn] = a;
+            break;
+        }
+
+        case OP_T32_LDR_LIT: {
+            addr_t base = (c->r[REG_PC] + 4) & ~3u;
+            addr_t ea = i->add ? base + i->imm : base - i->imm;
+            u32 v = 0;
+            if (!bus_read(bus, ea, 4, &v)) { c->halted = true; return false; }
+            c->r[i->rd] = v;
+            break;
+        }
+
+        case OP_T32_LDR_REG: {
+            u32 ea = c->r[i->rn] + (c->r[i->rm] << i->shift_n);
+            u32 v = 0;
+            if (!bus_read(bus, ea, 4, &v)) { c->halted = true; return false; }
+            c->r[i->rd] = v;
+            break;
+        }
+        case OP_T32_STR_REG: {
+            u32 ea = c->r[i->rn] + (c->r[i->rm] << i->shift_n);
+            if (!bus_write(bus, ea, 4, c->r[i->rd])) { c->halted = true; return false; }
+            break;
+        }
+
+        case OP_T32_LDRD_IMM: {
+            u32 base = c->r[i->rn];
+            u32 off  = i->imm;
+            u32 a    = i->add ? base + off : base - off;
+            addr_t ea = i->index ? a : base;
+            u32 v0 = 0, v1 = 0;
+            if (!bus_read(bus, ea,     4, &v0)) { c->halted = true; return false; }
+            if (!bus_read(bus, ea + 4, 4, &v1)) { c->halted = true; return false; }
+            c->r[i->rd] = v0;
+            c->r[i->rs] = v1;
+            if (i->writeback) c->r[i->rn] = a;
+            break;
+        }
+        case OP_T32_STRD_IMM: {
+            u32 base = c->r[i->rn];
+            u32 off  = i->imm;
+            u32 a    = i->add ? base + off : base - off;
+            addr_t ea = i->index ? a : base;
+            if (!bus_write(bus, ea,     4, c->r[i->rd])) { c->halted = true; return false; }
+            if (!bus_write(bus, ea + 4, 4, c->r[i->rs])) { c->halted = true; return false; }
+            if (i->writeback) c->r[i->rn] = a;
+            break;
+        }
+
+        case OP_T32_NOP:
+            break;
 
         default:
             c->halted = true;
             return false;
+    }
+
+    /* Restore APSR if inside IT block and the insn isn't a comparison. */
+    if (in_it && !op_is_flagsetter(i->op)) {
+        c->apsr = saved_apsr;
+    }
+
+    /* Advance IT state if we executed a non-IT instruction inside an IT block. */
+    if (in_it && i->op != OP_T32_IT) {
+        cpu_it_advance(c);
     }
 
     c->r[REG_PC] = next_pc;

@@ -200,6 +200,13 @@ static u8 decode_thumb16(u16 w, addr_t pc, insn_t* out) {
             out->reg_list = (w & 0xFF) | (((w >> 8) & 1) << 15); /* PC bit */
             return 2;
         }
+        /* IT: 1011 1111 cond mask, mask != 0000.  ARM ARM A7.7.38 */
+        if ((w & 0xFF00u) == 0xBF00u && (w & 0x000F) != 0) {
+            out->op = OP_T32_IT;
+            out->it_first = (w >> 4) & 0xF;
+            out->it_mask  = w & 0xF;
+            return 2;
+        }
         /* NOP / hints: BF00=NOP, BF10=YIELD, BF20=WFE, BF30=WFI, BF40=SEV */
         if ((w & 0xFF0Fu) == 0xBF00u) {
             u8 hint = (w >> 4) & 0xF;
@@ -288,22 +295,58 @@ static i32 sext(u32 v, u8 n) {
     return (i32)((v ^ m) - m);
 }
 
-/* Thumb-2 32-bit decode — ARM ARM A5.3. Branches with link (B/BL) encoding T4. */
+/* Rotate right by n. */
+static u32 ror32(u32 v, u32 n) {
+    n &= 31;
+    return n ? ((v >> n) | (v << (32 - n))) : v;
+}
+
+/* ThumbExpandImm — ARM ARM A5.3.2.
+   Decodes a 12-bit modified immediate (i:imm3:imm8) into a 32-bit value. */
+static u32 thumb_expand_imm(u32 i12) {
+    u32 imm8 = i12 & 0xFF;
+    u32 imm3i = (i12 >> 8) & 0xF;
+    if ((imm3i >> 2) == 0) {
+        /* Patterns based on imm3i bits[1:0]. */
+        switch (imm3i & 3) {
+            case 0: return imm8;
+            case 1: return imm8 | (imm8 << 16);
+            case 2: return (imm8 << 8) | (imm8 << 24);
+            case 3: return imm8 | (imm8 << 8) | (imm8 << 16) | (imm8 << 24);
+        }
+    }
+    /* Rotation form: 8-bit value with bit7=1, rotated right by (i:imm3:imm8[7]). */
+    u32 unrot = imm8 | 0x80;
+    u32 ror_n = (i12 >> 7) & 0x1F;
+    return ror32(unrot, ror_n);
+}
+
+/* Thumb-2 32-bit decode — ARM ARM A5.3. */
 static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
     set_undef(out, (u32)w0 << 16 | w1, pc);
     out->size = 4;
     out->raw = ((u32)w0 << 16) | w1;
 
-    /* Branch family: w0 bits[15:11] = 11110, w1 bits[15] = 1 — A5.3.4 */
+    u32 op1 = (w0 >> 11) & 0x3;   /* bits 12:11 */
+    u32 op2 = (w0 >> 4)  & 0x7F;  /* bits 10:4 */
+    u32 op_w1 = (w1 >> 15) & 1;
+
+    /* === Branches and miscellaneous control — A5.3.4 ===
+       w0[15:11]=11110, w1[15]=1.
+       BL:    w1[15:14]=11, w1[12]=1
+       B T4:  w1[15:14]=10, w1[12]=1
+       B T3:  w1[15:14]=10, w1[12]=0  (conditional) */
     if ((w0 & 0xF800u) == 0xF000u && (w1 & 0x8000u) == 0x8000u) {
         u32 S     = (w0 >> 10) & 1;
         u32 imm10 = w0 & 0x3FF;
+        u32 op1   = (w1 >> 14) & 0x3;     /* bit[15:14] */
+        u32 op12  = (w1 >> 12) & 1;       /* bit[12] */
         u32 J1    = (w1 >> 13) & 1;
-        u32 C     = (w1 >> 12) & 1;
         u32 J2    = (w1 >> 11) & 1;
         u32 imm11 = w1 & 0x7FF;
-        if (C == 1) {
-            /* BL — encoding T1, ARM ARM A7.7.18 */
+
+        if (op1 == 3 && op12 == 1) {
+            /* BL T1 */
             u32 I1 = (~(J1 ^ S)) & 1;
             u32 I2 = (~(J2 ^ S)) & 1;
             u32 imm25 = (S << 24) | (I1 << 23) | (I2 << 22) |
@@ -312,20 +355,245 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
             out->op  = OP_T32_BL;
             return 4;
         }
-        /* Unconditional B — encoding T4 */
-        u32 I1 = (~(J1 ^ S)) & 1;
-        u32 I2 = (~(J2 ^ S)) & 1;
-        u32 imm25 = (S << 24) | (I1 << 23) | (I2 << 22) |
-                    (imm10 << 12) | (imm11 << 1);
-        out->imm = (u32)sext(imm25, 25);
-        out->op  = OP_B_UNCOND;
+        if (op1 == 2 && op12 == 1) {
+            /* B T4 unconditional */
+            u32 I1 = (~(J1 ^ S)) & 1;
+            u32 I2 = (~(J2 ^ S)) & 1;
+            u32 imm25 = (S << 24) | (I1 << 23) | (I2 << 22) |
+                        (imm10 << 12) | (imm11 << 1);
+            out->imm = (u32)sext(imm25, 25);
+            out->op  = OP_B_UNCOND;
+            return 4;
+        }
+        if (op1 == 2 && op12 == 0) {
+            /* B T3 conditional */
+            u32 cond  = (w0 >> 6) & 0xF;
+            u32 imm6  = w0 & 0x3F;
+            u32 imm21 = (S << 20) | (J2 << 19) | (J1 << 18) |
+                        (imm6 << 12) | (imm11 << 1);
+            out->imm  = (u32)sext(imm21, 21);
+            out->cond = (u8)cond;
+            out->op   = OP_T32_B_COND;
+            return 4;
+        }
+    }
+
+    /* === Data processing (modified immediate) — A5.3.1 ===
+       w0[15:11]=11110, w0[9]=0, w1[15]=0 */
+    if ((w0 & 0xFA00u) == 0xF000u && op_w1 == 0) {
+        u32 op4 = (w0 >> 5) & 0xF;
+        u32 S   = (w0 >> 4) & 1;
+        u32 Rn  = w0 & 0xF;
+        u32 i_bit = (w0 >> 10) & 1;
+        u32 imm3  = (w1 >> 12) & 0x7;
+        u32 Rd    = (w1 >> 8) & 0xF;
+        u32 imm8  = w1 & 0xFF;
+        u32 i12   = (i_bit << 11) | (imm3 << 8) | imm8;
+
+        out->rn = (u8)Rn;
+        out->rd = (u8)Rd;
+        out->imm = thumb_expand_imm(i12);
+        out->set_flags = S != 0;
+
+        switch (op4) {
+            case 0:  out->op = (Rd == 15 && S) ? OP_T32_TST_IMM : OP_T32_AND_IMM; break;
+            case 1:  out->op = OP_T32_BIC_IMM; break;
+            case 2:  out->op = (Rn == 15) ? OP_T32_MOV_IMM : OP_T32_ORR_IMM; break;
+            case 3:  out->op = (Rn == 15) ? OP_T32_MVN_IMM : OP_T32_ORN_IMM; break;
+            case 4:  out->op = (Rd == 15 && S) ? OP_T32_TEQ_IMM : OP_T32_EOR_IMM; break;
+            case 8:  out->op = (Rd == 15 && S) ? OP_T32_CMN_IMM : OP_T32_ADD_IMM; break;
+            case 10: out->op = OP_T32_ADC_IMM; break;
+            case 11: out->op = OP_T32_SBC_IMM; break;
+            case 13: out->op = (Rd == 15 && S) ? OP_T32_CMP_IMM : OP_T32_SUB_IMM; break;
+            case 14: out->op = OP_T32_RSB_IMM; break;
+            default: break;
+        }
         return 4;
     }
 
-    /* Other Thumb-2 encodings (data proc, load/store, MSR/MRS, etc.)
-       — implemented incrementally as real firmware demands them. */
+    /* === Data processing (plain binary immediate) — A5.3.3 ===
+       w0[15:11]=11110, w0[9]=1, w1[15]=0 */
+    if ((w0 & 0xFA00u) == 0xF200u && op_w1 == 0) {
+        u32 op4 = (w0 >> 4) & 0x1F;
+        u32 Rn  = w0 & 0xF;
+        u32 i_bit = (w0 >> 10) & 1;
+        u32 imm3  = (w1 >> 12) & 0x7;
+        u32 Rd    = (w1 >> 8) & 0xF;
+        u32 imm8  = w1 & 0xFF;
+        u32 imm12 = (i_bit << 11) | (imm3 << 8) | imm8;
+
+        out->rn = (u8)Rn; out->rd = (u8)Rd;
+
+        if ((op4 & 0x1F) == 0x00) {     /* ADDW */
+            out->imm = imm12;
+            if (Rn == 15) { out->op = OP_T32_ADR_T3; }
+            else          { out->op = OP_T32_ADDW; }
+            return 4;
+        }
+        if ((op4 & 0x1F) == 0x0A) {     /* SUBW */
+            out->imm = imm12;
+            if (Rn == 15) { out->op = OP_T32_ADR_T2; }
+            else          { out->op = OP_T32_SUBW; }
+            return 4;
+        }
+        if ((op4 & 0x1F) == 0x04) {     /* MOVW imm16 */
+            u32 imm4 = w0 & 0xF;
+            out->imm = (imm4 << 12) | imm12;
+            out->op = OP_T32_MOVW;
+            return 4;
+        }
+        if ((op4 & 0x1F) == 0x0C) {     /* MOVT imm16 */
+            u32 imm4 = w0 & 0xF;
+            out->imm = (imm4 << 12) | imm12;
+            out->op = OP_T32_MOVT;
+            return 4;
+        }
+        return 4;
+    }
+
+    /* === Load/store single — A5.3.10 ===
+       w0[15:9]=1111100 (MSB byte 0xF8 family). Cover all common LDR/STR encodings. */
+    if ((w0 & 0xFE00u) == 0xF800u) {
+        u32 size  = (w0 >> 5) & 0x3;     /* 00=B, 01=H, 10=W */
+        u32 L     = (w0 >> 4) & 1;       /* 0=store 1=load */
+        u32 S_bit = (w0 >> 8) & 1;       /* sign-extend on load */
+        u32 Rn    = w0 & 0xF;
+        u32 Rt    = (w1 >> 12) & 0xF;
+        u32 op_field = (w1 >> 6) & 0x3F;
+
+        if (Rn == 15) {
+            /* PC-relative: T2 LDR literal — w1[11:0] = imm12, w0[7]=U */
+            u32 U   = (w0 >> 7) & 1;
+            u32 imm = w1 & 0xFFF;
+            out->rd = (u8)Rt; out->imm = imm; out->add = U != 0;
+            if (L && size == 2) out->op = OP_T32_LDR_LIT;
+            return 4;
+        }
+
+        if ((w0 & 0x0080u) != 0) {
+            /* T3: imm12 unsigned offset, no writeback */
+            u32 imm12 = w1 & 0xFFF;
+            out->rn = (u8)Rn; out->rd = (u8)Rt; out->imm = imm12;
+            out->add = true; out->index = true; out->writeback = false;
+            if (size == 2) out->op = L ? OP_T32_LDR_IMM  : OP_T32_STR_IMM;
+            else if (size == 1) out->op = L ? OP_T32_LDRH_IMM : OP_T32_STRH_IMM;
+            else                out->op = L ? OP_T32_LDRB_IMM : OP_T32_STRB_IMM;
+            if (L && S_bit) {
+                if (size == 0) out->op = OP_T32_LDRSB_IMM;
+                else if (size == 1) out->op = OP_T32_LDRSH_IMM;
+            }
+            return 4;
+        }
+
+        if ((op_field & 0x24) == 0x24 || (op_field & 0x3C) == 0x30 ||
+            (op_field & 0x3C) == 0x38 || (op_field & 0x3C) == 0x24 ||
+            (op_field & 0x3C) == 0x2C) {
+            /* T4: imm8 with P/U/W bits in w1[10:8] */
+            u32 P = (w1 >> 10) & 1;
+            u32 U = (w1 >> 9)  & 1;
+            u32 W = (w1 >> 8)  & 1;
+            u32 imm8 = w1 & 0xFF;
+            out->rn = (u8)Rn; out->rd = (u8)Rt; out->imm = imm8;
+            out->index = P != 0; out->add = U != 0; out->writeback = W != 0;
+            if (size == 2) out->op = L ? OP_T32_LDR_IMM  : OP_T32_STR_IMM;
+            else if (size == 1) out->op = L ? OP_T32_LDRH_IMM : OP_T32_STRH_IMM;
+            else                out->op = L ? OP_T32_LDRB_IMM : OP_T32_STRB_IMM;
+            if (L && S_bit) {
+                if (size == 0) out->op = OP_T32_LDRSB_IMM;
+                else if (size == 1) out->op = OP_T32_LDRSH_IMM;
+            }
+            return 4;
+        }
+
+        if (op_field == 0) {
+            /* Register offset: Rm in w1[3:0], shift in w1[5:4] */
+            u32 Rm = w1 & 0xF;
+            u32 sh = (w1 >> 4) & 0x3;
+            out->rn = (u8)Rn; out->rd = (u8)Rt; out->rm = (u8)Rm;
+            out->shift_n = (u8)sh; out->shift_type = 0;
+            out->index = true; out->add = true; out->writeback = false;
+            if (size == 2) out->op = L ? OP_T32_LDR_REG : OP_T32_STR_REG;
+            return 4;
+        }
+        return 4;
+    }
+
+    /* === Load/store dual (LDRD/STRD) — A5.3.6 ===
+       w0[15:9]=1110100, w0[6]=1 */
+    if ((w0 & 0xFE40u) == 0xE840u) {
+        u32 P = (w0 >> 8) & 1;
+        u32 U = (w0 >> 7) & 1;
+        u32 W = (w0 >> 5) & 1;
+        u32 L = (w0 >> 4) & 1;
+        u32 Rn = w0 & 0xF;
+        u32 Rt = (w1 >> 12) & 0xF;
+        u32 Rt2 = (w1 >> 8) & 0xF;
+        u32 imm8 = w1 & 0xFF;
+        out->rn = (u8)Rn; out->rd = (u8)Rt; out->rs = (u8)Rt2;
+        out->imm = imm8 << 2;
+        out->index = P != 0; out->add = U != 0; out->writeback = W != 0;
+        out->op = L ? OP_T32_LDRD_IMM : OP_T32_STRD_IMM;
+        return 4;
+    }
+
+    /* === Data processing (register) — A5.3.11 ===
+       w0[15:9]=1110101 */
+    if ((w0 & 0xFE00u) == 0xEA00u) {
+        u32 op4 = (w0 >> 5) & 0xF;
+        u32 S   = (w0 >> 4) & 1;
+        u32 Rn  = w0 & 0xF;
+        u32 imm3 = (w1 >> 12) & 0x7;
+        u32 Rd   = (w1 >> 8) & 0xF;
+        u32 imm2 = (w1 >> 6) & 0x3;
+        u32 typ  = (w1 >> 4) & 0x3;
+        u32 Rm   = w1 & 0xF;
+
+        out->rn = (u8)Rn; out->rd = (u8)Rd; out->rm = (u8)Rm;
+        out->set_flags = S != 0;
+        out->shift_type = (u8)typ;
+        out->shift_n = (u8)((imm3 << 2) | imm2);
+
+        switch (op4) {
+            case 0: out->op = (Rd == 15 && S) ? OP_T32_TST_REG : OP_T32_AND_REG; break;
+            case 1: out->op = OP_T32_BIC_REG; break;
+            case 2: out->op = (Rn == 15) ? OP_T32_MOV_REG : OP_T32_ORR_REG; break;
+            case 3: out->op = (Rn == 15) ? OP_T32_MVN_REG : OP_T32_ORN_REG; break;
+            case 4: out->op = (Rd == 15 && S) ? OP_T32_TEQ_REG : OP_T32_EOR_REG; break;
+            default: break;
+        }
+        return 4;
+    }
+    if ((w0 & 0xFE00u) == 0xEB00u) {
+        u32 op4 = (w0 >> 5) & 0xF;
+        u32 S   = (w0 >> 4) & 1;
+        u32 Rn  = w0 & 0xF;
+        u32 imm3 = (w1 >> 12) & 0x7;
+        u32 Rd   = (w1 >> 8) & 0xF;
+        u32 imm2 = (w1 >> 6) & 0x3;
+        u32 typ  = (w1 >> 4) & 0x3;
+        u32 Rm   = w1 & 0xF;
+
+        out->rn = (u8)Rn; out->rd = (u8)Rd; out->rm = (u8)Rm;
+        out->set_flags = S != 0;
+        out->shift_type = (u8)typ;
+        out->shift_n = (u8)((imm3 << 2) | imm2);
+
+        switch (op4) {
+            case 0:  out->op = (Rd == 15 && S) ? OP_T32_CMN_REG : OP_T32_ADD_REG; break;
+            case 2:  out->op = OP_T32_ADC_REG; break;
+            case 3:  out->op = OP_T32_SBC_REG; break;
+            case 13: out->op = (Rd == 15 && S) ? OP_T32_CMP_REG : OP_T32_SUB_REG; break;
+            case 14: out->op = OP_T32_RSB_REG; break;
+            default: break;
+        }
+        return 4;
+    }
+
     return 4;
 }
+
+/* Public for tests. */
+u32 thumb_expand_imm_pub(u32 i12) { return thumb_expand_imm(i12); }
 
 u8 decode(struct bus_s* bus, addr_t pc, insn_t* out) {
     u16 w0 = bus_r16(bus, pc);

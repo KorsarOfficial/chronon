@@ -42,6 +42,20 @@ void cpu_set_flags_nzcv_add(cpu_t* c, u32 a, u32 b, u32 result, bool carry_in) {
     c->apsr = f;
 }
 
+/* ITSTATE bits[7:5] = firstcond[3:1] (constant in block),
+   bits[4:0] = state, where bit[4] is current cond[0] (T/E flips it),
+   bits[3:0] are the remaining mask. Algorithm per ARM ARM A7.3.2. */
+void cpu_it_advance(cpu_t* c) {
+    if ((c->itstate & 0x07) == 0) {
+        c->itstate = 0; /* IT block over */
+    } else {
+        u8 hi3 = c->itstate & 0xE0;
+        u8 lo5 = c->itstate & 0x1F;
+        lo5 = (u8)((lo5 << 1) & 0x1F);
+        c->itstate = (u8)(hi3 | lo5);
+    }
+}
+
 /* Subtraction: result = a - b = a + ~b + 1. */
 void cpu_set_flags_nzcv_sub(cpu_t* c, u32 a, u32 b, u32 result) {
     u32 f = c->apsr & ~(APSR_N | APSR_Z | APSR_C | APSR_V);

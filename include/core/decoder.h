@@ -38,17 +38,50 @@ typedef enum {
     OP_NOP, OP_YIELD, OP_WFE, OP_WFI, OP_SEV,
     OP_IT,
 
-    /* Thumb-2 32-bit encodings (ARMv7-M) */
+    /* Thumb-2 32-bit encodings (ARMv7-M, ARM ARM A5.3) */
     OP_T32_BL,
-    OP_T32_BRANCH_COND,
-    OP_T32_DATA_IMM,
-    OP_T32_DATA_REG,
+    OP_T32_B_COND,                  /* B<cond>.W (T3 encoding) */
+
+    /* Data processing modified immediate — A5.3.1.
+       Carries S bit (set-flags) in cond field for executor. */
+    OP_T32_AND_IMM, OP_T32_BIC_IMM,
+    OP_T32_ORR_IMM, OP_T32_ORN_IMM,
+    OP_T32_EOR_IMM, OP_T32_TEQ_IMM,
+    OP_T32_ADD_IMM, OP_T32_ADC_IMM,
+    OP_T32_SBC_IMM, OP_T32_SUB_IMM,
+    OP_T32_RSB_IMM, OP_T32_TST_IMM,
+    OP_T32_CMN_IMM, OP_T32_CMP_IMM,
+    OP_T32_MOV_IMM, OP_T32_MVN_IMM,
+
+    /* Plain immediate (12-bit) — A5.3.3 */
+    OP_T32_ADDW, OP_T32_SUBW,
+    OP_T32_MOVW, OP_T32_MOVT,
+    OP_T32_ADR_T2, OP_T32_ADR_T3,
+
+    /* Data processing register with shift — A5.3.11 */
+    OP_T32_AND_REG, OP_T32_BIC_REG,
+    OP_T32_ORR_REG, OP_T32_ORN_REG,
+    OP_T32_EOR_REG, OP_T32_TEQ_REG,
+    OP_T32_ADD_REG, OP_T32_ADC_REG,
+    OP_T32_SBC_REG, OP_T32_SUB_REG,
+    OP_T32_RSB_REG, OP_T32_TST_REG,
+    OP_T32_CMN_REG, OP_T32_CMP_REG,
+    OP_T32_MOV_REG, OP_T32_MVN_REG,
+
+    /* Memory access */
     OP_T32_LDR_IMM, OP_T32_STR_IMM,
-    OP_T32_LDRH_IMM, OP_T32_STRH_IMM,
+    OP_T32_LDR_LIT, OP_T32_LDR_REG, OP_T32_STR_REG,
     OP_T32_LDRB_IMM, OP_T32_STRB_IMM,
+    OP_T32_LDRH_IMM, OP_T32_STRH_IMM,
+    OP_T32_LDRSB_IMM, OP_T32_LDRSH_IMM,
+    OP_T32_LDRD_IMM, OP_T32_STRD_IMM,
+    OP_T32_LDM, OP_T32_STM,
+
     OP_T32_MSR, OP_T32_MRS,
-    OP_T32_LDMIA, OP_T32_STMDB,
-    /* Placeholder — full set in decoder/t32.c. */
+    OP_T32_NOP,
+
+    /* IT block (16-bit but advanced state machine) */
+    OP_T32_IT,
 
     OP_COUNT
 } opcode_t;
@@ -62,7 +95,14 @@ typedef struct insn_s {
     u32 raw;          /* raw 16 or 32 bit encoding for debug */
     u8  cond;         /* condition code (0xE = AL = unconditional) */
     u32 reg_list;     /* bitmask for PUSH/POP/LDM/STM */
-    /* IT block context is carried on CPU, not per-insn. */
+    bool set_flags;   /* T32 S bit */
+    bool writeback;   /* T32 LDR/STR pre-/post-indexed writeback */
+    bool add;         /* T32 LDR/STR U bit (offset sign) */
+    bool index;       /* T32 LDR/STR P bit (pre-index) */
+    u8   shift_type;  /* T32 register shift: 0=LSL 1=LSR 2=ASR 3=ROR/RRX */
+    u8   shift_n;     /* T32 register shift amount (0..31) */
+    u8   it_mask;     /* IT block mask (4 bits) */
+    u8   it_first;    /* IT first condition (4 bits) */
 } insn_t;
 
 /* Decode at PC. Returns size (2 or 4). Sets out->op = OP_UNDEFINED on fail. */
