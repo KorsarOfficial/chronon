@@ -983,6 +983,57 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
             break;
         }
 
+        /* === MRS / MSR — access special registers (ARM ARM B1.4.4) === */
+        case OP_T32_MRS: {
+            u32 sysm = i->imm;
+            u32 v = 0;
+            switch (sysm) {
+                case 0: case 1: case 2: case 3:
+                    v = c->apsr | c->ipsr | c->epsr;
+                    if (sysm == 1) v = c->ipsr;        /* IPSR only */
+                    if (sysm == 2) v = c->epsr;        /* EPSR only */
+                    break;
+                case 5: v = c->ipsr; break;
+                case 8: v = c->msp; break;
+                case 9: v = c->psp; break;
+                case 16: v = c->primask; break;
+                case 17: v = c->basepri; break;
+                case 19: v = c->faultmask; break;
+                case 20: v = c->control; break;
+                default: break;
+            }
+            c->r[i->rd] = v;
+            break;
+        }
+        case OP_T32_MSR: {
+            u32 sysm = i->imm;
+            u32 v = c->r[i->rn];
+            switch (sysm) {
+                case 0: case 1: case 2: case 3:
+                    /* mask bit[1] writes NZCVQ of APSR */
+                    if (i->rs & 2) c->apsr = (c->apsr & ~0xF8000000u) | (v & 0xF8000000u);
+                    break;
+                case 8: c->msp = v & ~3u; if (c->mode == MODE_THREAD && !(c->control & 2)) c->r[REG_SP] = c->msp; break;
+                case 9: c->psp = v & ~3u; if (c->mode == MODE_THREAD && (c->control & 2)) c->r[REG_SP] = c->psp; break;
+                case 16: c->primask = v & 1u; break;
+                case 17: c->basepri = v & 0xFFu; break;
+                case 19: c->faultmask = v & 1u; break;
+                case 20: {
+                    /* CONTROL: bit[0] nPriv, bit[1] SPSEL (0=MSP, 1=PSP) */
+                    u32 old_spsel = c->control & 2u;
+                    c->control = v & 0x3u;
+                    u32 new_spsel = c->control & 2u;
+                    if (c->mode == MODE_THREAD && old_spsel != new_spsel) {
+                        if (new_spsel) { c->msp = c->r[REG_SP]; c->r[REG_SP] = c->psp; }
+                        else           { c->psp = c->r[REG_SP]; c->r[REG_SP] = c->msp; }
+                    }
+                    break;
+                }
+                default: break;
+            }
+            break;
+        }
+
         /* === Table branch byte / halfword === */
         case OP_T32_TBB: {
             addr_t base = (i->rn == REG_PC) ? (c->r[REG_PC] + 4) : c->r[i->rn];

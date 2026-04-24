@@ -38,6 +38,9 @@ run_test test3 "R0=00000006 R1=00000126"
 # test4: SysTick+NVIC — 5 ticks via interrupt handler
 run_test test4 "R0=00000005"
 
+# test5: MSR/MRS + PSP switch + PendSV handler chain
+run_test test5 "R0=00000003 R1=20000200 R2=20000200"
+
 echo ""
 echo "===== $PASS passed, $FAIL failed ====="
 [ $FAIL -eq 0 ]

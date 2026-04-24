@@ -366,7 +366,28 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
             return 4;
         }
         if (op1 == 2 && op12 == 0) {
-            /* B T3 conditional */
+            /* Misc-control vs B T3 conditional — disambiguate on w0 pattern. */
+            /* MRS T1: w0 = 0xF3EF. Rd = w1[11:8], SYSm = w1[7:0]. */
+            if (w0 == 0xF3EFu) {
+                out->rd  = (u8)((w1 >> 8) & 0xF);
+                out->imm = w1 & 0xFFu;
+                out->op  = OP_T32_MRS;
+                return 4;
+            }
+            /* MSR (reg) T1: w0[15:4] = 0xF38. Rn = w0[3:0]. */
+            if ((w0 & 0xFFF0u) == 0xF380u) {
+                out->rn  = (u8)(w0 & 0xF);
+                out->imm = w1 & 0xFFu;
+                out->rs  = (u8)((w1 >> 10) & 0x3);
+                out->op  = OP_T32_MSR;
+                return 4;
+            }
+            /* Hint / barrier: w0 = 0xF3AF — treat all as NOP. */
+            if (w0 == 0xF3AFu) {
+                out->op = OP_T32_NOP;
+                return 4;
+            }
+            /* Otherwise: B T3 conditional. */
             u32 cond  = (w0 >> 6) & 0xF;
             u32 imm6  = w0 & 0x3F;
             u32 imm21 = (S << 20) | (J2 << 19) | (J1 << 18) |
@@ -618,6 +639,25 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
         out->rn = (u8)(w0 & 0xF);
         out->rm = (u8)(w1 & 0xF);
         out->op = (w1 & 0x10) ? OP_T32_TBH : OP_T32_TBB;
+        return 4;
+    }
+
+    /* === MRS (T1) — A7.7.69 ===
+       w0 = 1111_0011_1110_1111 = 0xF3EF, w1[15:12]=1000, w1[11:8]=Rd, w1[7:0]=SYSm */
+    if (w0 == 0xF3EFu && (w1 & 0xF000u) == 0x8000u) {
+        out->rd  = (u8)((w1 >> 8) & 0xF);
+        out->imm = w1 & 0xFFu;        /* SYSm selector */
+        out->op  = OP_T32_MRS;
+        return 4;
+    }
+    /* === MSR (reg, T1) — A7.7.73 ===
+       w0 = 1111_0011_1000_Rn, w1[15:12]=1000, w1[11:10]=mask,
+       w1[9:8]=00, w1[7:0]=SYSm */
+    if ((w0 & 0xFFF0u) == 0xF380u && (w1 & 0xFF00u) == 0x8800u) {
+        out->rn   = (u8)(w0 & 0xF);
+        out->imm  = w1 & 0xFFu;       /* SYSm */
+        out->rs   = (u8)((w1 >> 10) & 0x3); /* mask */
+        out->op   = OP_T32_MSR;
         return 4;
     }
 
