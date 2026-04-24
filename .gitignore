@@ -4,9 +4,12 @@
 *.obj
 *.o
 *.a
+*.elf
+*.bin
 *.exp
 *.lib
 *.pdb
+*.log
 .vs/
 .vscode/
 compile_commands.json

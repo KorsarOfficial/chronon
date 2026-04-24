@@ -128,6 +128,101 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
             break;
         }
 
+        case OP_ORR_REG: {
+            u32 r = c->r[i->rn] | c->r[i->rm];
+            c->r[i->rd] = r;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_BIC_REG: {
+            u32 r = c->r[i->rn] & ~c->r[i->rm];
+            c->r[i->rd] = r;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_MVN_REG: {
+            u32 r = ~c->r[i->rm];
+            c->r[i->rd] = r;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_TST_REG: {
+            u32 r = c->r[i->rn] & c->r[i->rm];
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_CMN_REG: {
+            u32 a = c->r[i->rn], b = c->r[i->rm];
+            cpu_set_flags_nzcv_add(c, a, b, a + b, false);
+            break;
+        }
+        case OP_RSB_IMM: {
+            /* Encoded as RSBS Rd, Rn, #0 — negation. */
+            u32 a = 0, b = c->r[i->rn];
+            u32 r = a - b;
+            c->r[i->rd] = r;
+            cpu_set_flags_nzcv_sub(c, a, b, r);
+            break;
+        }
+        case OP_ADC_REG: {
+            u32 a = c->r[i->rn], b = c->r[i->rm];
+            bool ci = (c->apsr & APSR_C) != 0;
+            u32 r = a + b + (ci ? 1u : 0u);
+            c->r[i->rd] = r;
+            cpu_set_flags_nzcv_add(c, a, b, r, ci);
+            break;
+        }
+        case OP_SBC_REG: {
+            /* SBC = a + ~b + C. Carry-clear means borrow. */
+            u32 a = c->r[i->rn], b = c->r[i->rm];
+            bool ci = (c->apsr & APSR_C) != 0;
+            u32 nb = ~b;
+            u32 r = a + nb + (ci ? 1u : 0u);
+            c->r[i->rd] = r;
+            cpu_set_flags_nzcv_add(c, a, nb, r, ci);
+            break;
+        }
+        case OP_ASR_IMM: {
+            u32 v = c->r[i->rm];
+            u32 sh = i->imm ? i->imm : 32;
+            i32 r = sh >= 32 ? ((i32)v >> 31) : ((i32)v >> sh);
+            c->r[i->rd] = (u32)r;
+            cpu_set_flags_nz(c, (u32)r);
+            break;
+        }
+        case OP_LSL_REG: {
+            u32 sh = c->r[i->rm] & 0xFF;
+            u32 v  = c->r[i->rd];
+            u32 r  = sh >= 32 ? 0 : (v << sh);
+            c->r[i->rd] = r;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_LSR_REG: {
+            u32 sh = c->r[i->rm] & 0xFF;
+            u32 v  = c->r[i->rd];
+            u32 r  = sh >= 32 ? 0 : (v >> sh);
+            c->r[i->rd] = r;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+        case OP_ASR_REG: {
+            u32 sh = c->r[i->rm] & 0xFF;
+            i32 v  = (i32)c->r[i->rd];
+            i32 r  = sh >= 32 ? (v >> 31) : (v >> sh);
+            c->r[i->rd] = (u32)r;
+            cpu_set_flags_nz(c, (u32)r);
+            break;
+        }
+        case OP_ROR_REG: {
+            u32 sh = c->r[i->rm] & 0x1F;
+            u32 v  = c->r[i->rd];
+            u32 r  = sh ? ((v >> sh) | (v << (32 - sh))) : v;
+            c->r[i->rd] = r;
+            cpu_set_flags_nz(c, r);
+            break;
+        }
+
         case OP_B_COND: {
             if (cond_pass(c->apsr, i->cond)) {
                 /* PC at branch = current + 4 (pipeline offset per ARM ARM). */
