@@ -29,3 +29,7 @@ add_test(NAME tt_snapshot COMMAND test_tt_snapshot)
 add_executable(test_tt_replay test_tt_replay.c)
 target_link_libraries(test_tt_replay PRIVATE cortex_m_core)
 add_test(NAME tt_replay COMMAND test_tt_replay)
+
+add_executable(test_tt_rewind test_tt_rewind.c)
+target_link_libraries(test_tt_rewind PRIVATE cortex_m_core)
+add_test(NAME tt_rewind COMMAND test_tt_rewind)
