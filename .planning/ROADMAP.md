@@ -29,6 +29,7 @@ This is the unique USP that beats QEMU/Renode.
 2. snapshot(state) -> blob; restore(blob) reproduces register/memory exactly
 3. rewind(N cycles back) seeks correctly across 1M+ cycle history under 100ms
 4. step_back(1) returns to previous instruction in interactive debug
+   (step_back uses whole-instruction granularity; cycle counter may overshoot target by up to one ARM cycle)
 5. all 14 v1.0 firmware tests still pass
 
 **Plans:**
