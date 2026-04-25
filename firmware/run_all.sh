@@ -79,6 +79,12 @@ run_test test11_nvic_irq "R0=00000001 R1=0000000a"
 # test12: DSP DFT N=8 with VFMA (Cortex-M4F -O2)
 run_test test12_dsp_fft "R0=00000004"
 
+# test13: Zephyr-lite k_thread + k_sleep round-robin
+run_test test13_zephyr_lite "R0=00000005 R1=0000000a"
+
+# test14: Ethernet ICMP echo through MMIO MAC loopback
+run_test test14_eth_icmp "R0=00000001 R1=0000002a R2=00000011"
+
 echo ""
 echo "===== $PASS passed, $FAIL failed ====="
 [ $FAIL -eq 0 ]

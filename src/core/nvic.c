@@ -102,6 +102,30 @@ bool exc_enter(cpu_t* c, bus_t* b, u8 exc) {
 }
 
 extern nvic_t* g_nvic_for_run;
+
+/* Raise a configurable fault. Sets fault status bits, then escalates to
+   HardFault if we are already in handler mode (no nesting in our model). */
+void raise_fault(cpu_t* c, bus_t* b, u8 fault, u32 fault_addr, u32 status_bit) {
+    /* Map fault → CFSR field. CFSR layout (ARM ARM B3.2.15):
+       bits[7:0] MMFSR, bits[15:8] BFSR, bits[31:16] UFSR */
+    if (fault == EXC_MEM_FAULT) {
+        c->cfsr |= status_bit & 0xFFu;
+        if (status_bit & 0x80) c->mmfar = fault_addr;
+    } else if (fault == EXC_BUS_FAULT) {
+        c->cfsr |= (status_bit & 0xFFu) << 8;
+        if (status_bit & 0x80) c->bfar = fault_addr;
+    } else if (fault == EXC_USAGE_FAULT) {
+        c->cfsr |= (status_bit & 0xFFFFu) << 16;
+    }
+    /* Escalate to HardFault if we're already in a handler. */
+    u8 target = fault;
+    if (c->mode == MODE_HANDLER) {
+        c->hfsr |= (1u << 30);  /* FORCED */
+        target = EXC_HARD_FAULT;
+    }
+    exc_enter(c, b, target);
+}
+
 bool exc_return(cpu_t* c, bus_t* b, u32 exc_return) {
     /* Clear active bit for the IRQ we are returning from. */
     if (g_nvic_for_run && c->ipsr >= EXC_IRQ0 && c->ipsr < EXC_IRQ0 + NVIC_IRQ_LINES) {

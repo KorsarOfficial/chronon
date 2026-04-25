@@ -11,6 +11,7 @@
 #include "periph/mpu.h"
 #include "periph/stm32.h"
 #include "periph/dwt.h"
+#include "periph/eth.h"
 #include "core/gdb.h"
 #include "core/nvic.h"
 
@@ -71,6 +72,8 @@ int main(int argc, char** argv) {
     systick_attach(&bus, &systick);
     static scb_t scb = {0};
     scb_attach(&bus, &scb);
+    extern cpu_t* g_cpu_for_scb;
+    g_cpu_for_scb = NULL; /* set after cpu_reset below */
     static mpu_t mpu = {0};
     mpu_attach(&bus, &mpu);
     static stm32_t stm32;
@@ -82,11 +85,14 @@ int main(int argc, char** argv) {
     static nvic_t nvic = {0};
     nvic_attach(&bus, &nvic);
     g_nvic_for_run = &nvic;
+    static eth_t eth = {0};
+    eth_attach(&bus, &eth);
     bus_load_blob(&bus, FLASH_BASE, blob, sz);
     free(blob);
 
     cpu_t cpu;
     cpu_reset(&cpu, CORE_M4);
+    g_cpu_for_scb = &cpu;
     /* Cortex-M reset: SP = [0x0], PC = [0x4] per ARM ARM B1.5.5 */
     cpu.msp = bus_r32(&bus, 0x0);
     cpu.r[REG_SP] = cpu.msp;

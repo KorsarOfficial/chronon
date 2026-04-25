@@ -661,9 +661,14 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
 
         switch (op1) {
             case 0: out->op = OP_T32_SMULL; return 4;
-            case 1: if (op2 == 0xF) { out->op = OP_T32_SDIV; return 4; } break;
+            case 1: if (op2 == 0xF) {
+                /* SDIV: Rd is at bit[11:8] (here mapped to rs), not bit[15:12] */
+                out->rd = (u8)RdHi; out->op = OP_T32_SDIV; return 4;
+            } break;
             case 2: out->op = OP_T32_UMULL; return 4;
-            case 3: if (op2 == 0xF) { out->op = OP_T32_UDIV; return 4; } break;
+            case 3: if (op2 == 0xF) {
+                out->rd = (u8)RdHi; out->op = OP_T32_UDIV; return 4;
+            } break;
             case 4: out->op = OP_T32_SMLAL; return 4;
             case 6: out->op = OP_T32_UMLAL; return 4;
             default: break;

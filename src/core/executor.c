@@ -1375,9 +1375,13 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
             break;
         }
 
-        default:
-            c->halted = true;
-            return false;
+        default: {
+            /* Undefined instruction → UsageFault (UNDEFINSTR bit). If we're
+               already in a handler, escalate to HardFault. ARM ARM B3.2.16. */
+            extern void raise_fault(cpu_t*, bus_t*, u8, u32, u32);
+            raise_fault(c, bus, 6 /* EXC_USAGE_FAULT */, 0, 1u /* UNDEFINSTR */);
+            return true;
+        }
     }
 
     /* Restore APSR if inside IT block and the insn isn't a comparison. */

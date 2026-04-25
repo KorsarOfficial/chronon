@@ -9,6 +9,10 @@
 #include "periph/scb.h"
 #include "periph/dwt.h"
 #include "core/gdb.h"
+#include "core/jit.h"
+
+static jit_t g_jit;
+static int g_jit_inited = 0;
 
 extern dwt_t* g_dwt_for_run;
 dwt_t* g_dwt_for_run = NULL;
@@ -48,6 +52,7 @@ FORCE_INLINE void cache_decode(bus_t* bus, addr_t pc, insn_t* out) {
 u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
                      systick_t* st, scb_t* scb, gdb_t* gdb) {
     dcache_invalidate();
+    if (!g_jit_inited) { jit_init(&g_jit); g_jit_inited = 1; }
     u64 i = 0;
     if (gdb && gdb->active && gdb->halted_for_gdb) {
         gdb_serve(gdb, c, bus);
@@ -58,6 +63,17 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
             gdb->halted_for_gdb = true;
             gdb_serve(gdb, c, bus);
         }
+        /* JIT fast path: try to run a pre-decoded block; falls back to
+           interpreter on miss or first few hits. */
+        if (!gdb) {
+            u64 jit_steps = 0;
+            if (jit_run(&g_jit, c, bus, execute, &jit_steps) && jit_steps > 0) {
+                if (st) systick_tick(st, (u32)jit_steps);
+                if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
+                i += jit_steps - 1;
+                goto check_irqs;
+            }
+        }
         insn_t ins;
         cache_decode(bus, c->r[REG_PC], &ins);
         if (!execute(c, bus, &ins)) break;
@@ -65,6 +81,7 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
         if (st) systick_tick(st, 1);
         if (g_dwt_for_run) dwt_tick(g_dwt_for_run);
 
+    check_irqs:
         if (c->mode == MODE_THREAD && !(c->primask & 1u)) {
             if (st && st->irq_pending) {
                 st->irq_pending = false;

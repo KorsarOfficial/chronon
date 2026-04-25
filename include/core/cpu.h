@@ -66,6 +66,10 @@ typedef struct cpu_s {
     /* ITSTATE per ARM ARM A7.3.2: 8 bits encoding cond + length. */
     u8 itstate;
     fpu_t fpu;
+    u32 cfsr;       /* Configurable Fault Status (UFSR/BFSR/MMFSR) — 0xE000ED28 */
+    u32 hfsr;       /* HardFault Status — 0xE000ED2C */
+    u32 mmfar;      /* Memory Management Fault Address — 0xE000ED34 */
+    u32 bfar;       /* Bus Fault Address — 0xE000ED38 */
 } cpu_t;
 
 /* IT helpers: extract current cond and step state. */

@@ -57,6 +57,9 @@ void nvic_clear_active(nvic_t* n, u32 irq);
 
 /* Trigger exception entry: save context, set PC to handler from VTOR[exc]. */
 bool exc_enter(cpu_t* c, bus_t* b, u8 exc);
+/* Raise a fault. If the fault's handler is unavailable or escalation rules
+   require it, escalate to HardFault. Sets CFSR/HFSR/MMFAR/BFAR as needed. */
+void raise_fault(cpu_t* c, bus_t* b, u8 fault, u32 fault_addr, u32 status_bit);
 /* EXC_RETURN value execution: restore context, pop stack, return to thread. */
 bool exc_return(cpu_t* c, bus_t* b, u32 exc_return);
 
