@@ -69,4 +69,61 @@ void tt_record_uart_rx(u64 cycle, u8 byte);
 extern tt_t* g_tt;
 extern bool  g_replay_mode; /* true during tt_replay; suppresses side effects */
 
+/* ---- Snapshot module (13-02) ---- */
+
+#define SNAP_MAGIC   0x54544B30u  /* "TTK0" little-endian */
+#define SNAP_VERSION 1u
+#define SRAM_BASE_ADDR 0x20000000u
+#define SRAM_SIZE      (256u * 1024u)
+
+typedef struct snap_blob_s {
+    u32 magic;
+    u32 version;
+    u64 cycle;
+    cpu_t     cpu;
+    systick_t st;
+    nvic_t    nvic;
+    scb_t     scb;
+    mpu_t     mpu;
+    dwt_t     dwt;
+    stm32_t   stm32;
+    eth_t     eth_state;  /* eth.bus zeroed on save, refilled on restore */
+    uart_t    uart_state; /* rx_q/replay_mode preserved across snap */
+    u32 sram_size;        /* always SRAM_SIZE */
+    u8  sram[SRAM_SIZE];
+    u32 checksum;         /* XOR32 of all preceding bytes */
+} snap_blob_t;
+
+bool snap_save   (snap_blob_t* blob, cpu_t* c, bus_t* bus, tt_periph_t* p);
+bool snap_restore(const snap_blob_t* blob, cpu_t* c, bus_t* bus, tt_periph_t* p);
+
+/* File round-trip (cross-session). */
+bool snap_save_to_file  (const snap_blob_t* blob, const char* path);
+bool snap_load_from_file(snap_blob_t* blob, const char* path);
+
+/* Internal helper exposed for tests. */
+u32  snap_xor32(const u8* data, u32 n);
+
+/* Set by tt_create in 13-04; NULL until then. snap_restore flushes via jit_reset_counters. */
+extern jit_t* g_jit_for_tt;
+
+/* ---- Replay engine (13-03) ---- */
+
+/* Dispatch one event: EVENT_UART_RX -> uart_inject_rx, EVENT_IRQ_INJECT -> nvic_set_pending. */
+void tt_inject_event(cpu_t* c, bus_t* bus, tt_periph_t* p, const ev_t* e);
+
+/* run_until_cycle: loops run_steps_full_g, drains log events at their cycle stamps,
+   stops when c->cycles >= target_cycle (whole-instruction granularity;
+   overshoot <= one ARM cycle). Returns cycles advanced. */
+u64 run_until_cycle(cpu_t* c, bus_t* bus, u64 target_cycle,
+                    systick_t* st, scb_t* scb, jit_t* g,
+                    const ev_t* log, u32 log_n, u32* log_pos,
+                    tt_periph_t* p);
+
+/* tt_replay: snap_restore(start) then run_until_cycle to target_cycle under g_replay_mode.
+   Returns true if restore succeeded. Byte-equal output for same (start, log, target). */
+bool tt_replay(const snap_blob_t* start, const ev_log_t* log,
+               u64 target_cycle, cpu_t* c, bus_t* bus, tt_periph_t* p,
+               jit_t* g);
+
 #endif
