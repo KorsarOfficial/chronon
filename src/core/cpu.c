@@ -5,8 +5,9 @@ void cpu_reset(cpu_t* c, core_t core) {
     memset(c, 0, sizeof(*c));
     c->core = core;
     c->mode = MODE_THREAD;
-    c->epsr = (1u << 24); /* T bit — Cortex-M is always Thumb */
+    c->epsr = (1u << 24);
     c->halted = false;
+    fpu_reset(&c->fpu);
 }
 
 u32 cpu_read_reg(const cpu_t* c, u32 n) {

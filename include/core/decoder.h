@@ -96,6 +96,15 @@ typedef enum {
     /* T32 register shift (Rd ← shift(Rn, Rm)). Separate from Thumb-1 LSL/etc. */
     OP_T32_LSL_R, OP_T32_LSR_R, OP_T32_ASR_R, OP_T32_ROR_R,
 
+    /* VFP single-precision (Cortex-M4F) — A7.5 */
+    OP_VLDR_S, OP_VSTR_S,
+    OP_VADD_S, OP_VSUB_S, OP_VMUL_S, OP_VDIV_S,
+    OP_VMOV_F_R, OP_VMOV_R_F,
+    OP_VMOV_S, OP_VABS_S, OP_VNEG_S, OP_VSQRT_S,
+    OP_VMOV_IMM_S,
+    OP_VCMP_S, OP_VCVT_F_I, OP_VCVT_I_F,
+    OP_VMRS, OP_VMSR,
+
     /* Table-branch byte/halfword */
     OP_T32_TBB,    OP_T32_TBH,
 
@@ -120,8 +129,10 @@ typedef struct insn_s {
     bool index;       /* T32 LDR/STR P bit (pre-index) */
     u8   shift_type;  /* T32 register shift: 0=LSL 1=LSR 2=ASR 3=ROR/RRX */
     u8   shift_n;     /* T32 register shift amount (0..31) */
-    u8   it_mask;     /* IT block mask (4 bits) */
-    u8   it_first;    /* IT first condition (4 bits) */
+    u8   it_mask;
+    u8   it_first;
+    /* VFP fields. Sd = single-precision destination. */
+    u8   sd, sn, sm;
 } insn_t;
 
 /* Decode at PC. Returns size (2 or 4). Sets out->op = OP_UNDEFINED on fail. */

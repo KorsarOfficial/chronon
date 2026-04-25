@@ -976,6 +976,95 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
         case OP_T32_NOP:
             break;
 
+        /* === VFP single-precision === */
+        case OP_VLDR_S: {
+            addr_t base = (i->rn == REG_PC) ? ((c->r[REG_PC] + 4) & ~3u) : c->r[i->rn];
+            addr_t a = i->add ? base + i->imm : base - i->imm;
+            u32 v = 0;
+            if (!bus_read(bus, a, 4, &v)) { c->halted = true; return false; }
+            c->fpu.reg.u[i->sd] = v;
+            break;
+        }
+        case OP_VSTR_S: {
+            addr_t base = c->r[i->rn];
+            addr_t a = i->add ? base + i->imm : base - i->imm;
+            if (!bus_write(bus, a, 4, c->fpu.reg.u[i->sd])) { c->halted = true; return false; }
+            break;
+        }
+        case OP_VADD_S:
+            c->fpu.reg.s[i->sd] = c->fpu.reg.s[i->sn] + c->fpu.reg.s[i->sm];
+            break;
+        case OP_VSUB_S:
+            c->fpu.reg.s[i->sd] = c->fpu.reg.s[i->sn] - c->fpu.reg.s[i->sm];
+            break;
+        case OP_VMUL_S:
+            c->fpu.reg.s[i->sd] = c->fpu.reg.s[i->sn] * c->fpu.reg.s[i->sm];
+            break;
+        case OP_VDIV_S:
+            c->fpu.reg.s[i->sd] = c->fpu.reg.s[i->sn] / c->fpu.reg.s[i->sm];
+            break;
+        case OP_VMOV_S:
+            c->fpu.reg.u[i->sd] = c->fpu.reg.u[i->sm];
+            break;
+        case OP_VMOV_IMM_S:
+            c->fpu.reg.u[i->sd] = i->imm;
+            break;
+        case OP_VABS_S: {
+            u32 v = c->fpu.reg.u[i->sm] & 0x7FFFFFFFu;
+            c->fpu.reg.u[i->sd] = v;
+            break;
+        }
+        case OP_VNEG_S:
+            c->fpu.reg.u[i->sd] = c->fpu.reg.u[i->sm] ^ 0x80000000u;
+            break;
+        case OP_VSQRT_S: {
+            float v = c->fpu.reg.s[i->sm];
+            float r = v >= 0 ? __builtin_sqrtf(v) : 0.0f / 0.0f;
+            c->fpu.reg.s[i->sd] = r;
+            break;
+        }
+        case OP_VMOV_R_F:
+            c->fpu.reg.u[i->sn] = c->r[i->rd];
+            break;
+        case OP_VMOV_F_R:
+            c->r[i->rd] = c->fpu.reg.u[i->sn];
+            break;
+        case OP_VMRS:
+            if (i->rd == 15) {
+                /* APSR_nzcv ← FPSCR[31:28] */
+                c->apsr = (c->apsr & 0x07FFFFFFu) | (c->fpu.fpscr & 0xF8000000u);
+            } else {
+                c->r[i->rd] = c->fpu.fpscr;
+            }
+            break;
+        case OP_VMSR:
+            c->fpu.fpscr = c->r[i->rd];
+            break;
+        case OP_VCMP_S: {
+            float a = c->fpu.reg.s[i->sd];
+            /* VCMP zero variant: compare against 0.0 if op selected zero. */
+            float b = (i->sm == 0) ? 0.0f : c->fpu.reg.s[i->sm];
+            u32 nzcv;
+            if (a > b)      nzcv = 0x20000000u; /* C */
+            else if (a < b) nzcv = 0x80000000u; /* N */
+            else if (a == b) nzcv = 0x60000000u; /* Z C */
+            else            nzcv = 0x30000000u; /* unordered: C V */
+            c->fpu.fpscr = (c->fpu.fpscr & 0x07FFFFFFu) | nzcv;
+            break;
+        }
+        case OP_VCVT_F_I: {
+            /* Float → integer (toward zero) */
+            i32 r = (i32)c->fpu.reg.s[i->sm];
+            c->fpu.reg.u[i->sd] = (u32)r;
+            break;
+        }
+        case OP_VCVT_I_F: {
+            /* Integer → float */
+            i32 v = (i32)c->fpu.reg.u[i->sm];
+            c->fpu.reg.s[i->sd] = (float)v;
+            break;
+        }
+
         /* === T32 Load/Store multiple (IA increment-after / DB decrement-before) === */
         case OP_T32_LDM:
         case OP_T32_STM: {

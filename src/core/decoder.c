@@ -759,6 +759,112 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
         return 4;
     }
 
+    /* === VFP single-precision — coproc cp10/cp11 (A5.3.16, A7.5) ===
+       Common prefix: w0[15:9] = 1110_110 or 1110_111, w1[11:8] = 1010 (cp10) for single.
+       Layout for VLDR/VSTR (w0 = 1110_110 P U D W Rn, w1 = Vd 1010 imm8):
+         single Sd = (Vd << 1) | D
+       For data-proc (VADD, VSUB, ...): w0 = 1110_1110 op0 D op1 Vn, w1 = Vd 1010 N op2 M 0 Vm */
+    /* VLDR/VSTR single — w0[15:8]=0xED, w1[11:8]=1010 */
+    if ((w0 & 0xFF00u) == 0xED00u && ((w1 >> 8) & 0xF) == 0xA) {
+        u32 U   = (w0 >> 7) & 1;
+        u32 D   = (w0 >> 6) & 1;
+        u32 L   = (w0 >> 4) & 1;
+        u32 Rn  = w0 & 0xF;
+        u32 Vd  = (w1 >> 12) & 0xF;
+        u32 imm8 = w1 & 0xFF;
+        out->rn = (u8)Rn;
+        out->sd = (u8)((Vd << 1) | D);
+        out->imm = imm8 << 2;
+        out->add = U != 0;
+        out->op = L ? OP_VLDR_S : OP_VSTR_S;
+        return 4;
+    }
+
+    /* VMOV between core reg and single FP reg (must be before data-proc check):
+       w0 = 1110_1110_000_op_Vn, w1 = Rt 1010 N 00 1 0000.
+       Fixed bits[6:0] = 0010000. */
+    if ((w0 & 0xFFE0u) == 0xEE00u && ((w1 >> 8) & 0xF) == 0xA && (w1 & 0x7F) == 0x10) {
+        u32 op = (w0 >> 4) & 1;
+        u32 N = (w1 >> 7) & 1;
+        u32 Vn = w0 & 0xF;
+        out->rd = (u8)((w1 >> 12) & 0xF);
+        out->sn = (u8)((Vn << 1) | N);
+        out->op = op ? OP_VMOV_F_R : OP_VMOV_R_F;
+        return 4;
+    }
+
+    /* VFP data-processing single: w0 prefix 1110_1110, w1[11:8]=1010 */
+    if ((w0 & 0xFF00u) == 0xEE00u && ((w1 >> 8) & 0xF) == 0xA) {
+        u32 D = (w0 >> 6) & 1;
+        u32 op0 = ((w0 >> 4) & 0xF) & 0xB; /* mask out D bit (bit[22]) */
+        u32 N = (w1 >> 7) & 1;
+        u32 M = (w1 >> 5) & 1;
+        u32 op2 = (w1 >> 6) & 1;
+        u32 Vn = w0 & 0xF;
+        u32 Vd = (w1 >> 12) & 0xF;
+        u32 Vm = w1 & 0xF;
+        out->sd = (u8)((Vd << 1) | D);
+        out->sn = (u8)((Vn << 1) | N);
+        out->sm = (u8)((Vm << 1) | M);
+
+        /* VMRS (Rt = FPSCR): w0=0xEEF1, w1=Rt 1010 0001 0000 */
+        if (w0 == 0xEEF1u && (w1 & 0x0FFF) == 0x0A10u) {
+            out->rd = (u8)((w1 >> 12) & 0xF);
+            out->op = OP_VMRS;
+            return 4;
+        }
+        if (w0 == 0xEEE1u && (w1 & 0x0FFF) == 0x0A10u) {
+            out->rd = (u8)((w1 >> 12) & 0xF);
+            out->op = OP_VMSR;
+            return 4;
+        }
+
+        /* VMOV imm/reg + VABS/VNEG/VSQRT/VCVT live in op0 = 1011 group */
+        if (op0 == 0xB) {
+            u32 opc2 = (w1 >> 6) & 3;
+            /* VMOV imm: w1[7:4] == 0000 (no N/M/op2 bits set) */
+            if ((w1 & 0xF0u) == 0x00u) {
+                u32 imm4H = Vn;
+                u32 imm4L = w1 & 0xF;
+                u32 imm8 = (imm4H << 4) | imm4L;
+                /* VFPExpandImm32 (single) */
+                u32 a = (imm8 >> 7) & 1;
+                u32 b = (imm8 >> 6) & 1;
+                u32 cdefgh = imm8 & 0x3F;
+                u32 imm32 = (a << 31) | (((!b) & 1) << 30) |
+                            ((b ? 0x1F : 0) << 25) | (cdefgh << 19);
+                out->imm = imm32;
+                out->op = OP_VMOV_IMM_S;
+                return 4;
+            }
+            if (Vn == 0) {
+                if (opc2 == 1)      out->op = OP_VMOV_S;
+                else if (opc2 == 3) out->op = OP_VABS_S;
+                else                out->op = OP_VMOV_S;
+            } else if (Vn == 1) {
+                u32 opc2 = (w1 >> 6) & 3;
+                if (opc2 == 1)      out->op = OP_VNEG_S;
+                else if (opc2 == 3) out->op = OP_VSQRT_S;
+                else                out->op = OP_VNEG_S;
+            } else if (Vn == 4 || Vn == 5) {
+                out->op = OP_VCMP_S;
+            } else if (Vn == 8) {
+                /* VCVT integer → float (S32→F32 if op2 bit set, U32→F32 otherwise) */
+                out->op = OP_VCVT_I_F;
+            } else if (Vn == 0xC || Vn == 0xD) {
+                /* VCVT float → integer (toward zero) */
+                out->op = OP_VCVT_F_I;
+            }
+            return 4;
+        }
+        /* VADD: op0=0011, VSUB: op0=0011 with op2=1, VMUL: op0=0010, VDIV: op0=1000 */
+        if (op0 == 0x3) { out->op = op2 ? OP_VSUB_S : OP_VADD_S; return 4; }
+        if (op0 == 0x2) { out->op = OP_VMUL_S; return 4; }
+        if (op0 == 0x8) { out->op = OP_VDIV_S; return 4; }
+        return 4;
+    }
+
+
     /* === MRS (T1) — A7.7.69 ===
        w0 = 1111_0011_1110_1111 = 0xF3EF, w1[15:12]=1000, w1[11:8]=Rd, w1[7:0]=SYSm */
     if (w0 == 0xF3EFu && (w1 & 0xF000u) == 0x8000u) {

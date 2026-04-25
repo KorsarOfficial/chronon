@@ -2,6 +2,7 @@
 #define CORTEX_M_CPU_H
 
 #include "core/types.h"
+#include "core/fpu.h"
 
 /* ARMv7-M register file: R0-R12 general, R13=SP, R14=LR, R15=PC.
    Two stack pointers per ARM ARM B1.4.7: MSP (main) and PSP (process).
@@ -64,6 +65,7 @@ typedef struct cpu_s {
     bool halted;      /* CPU stopped (wfi or sim shutdown) */
     /* ITSTATE per ARM ARM A7.3.2: 8 bits encoding cond + length. */
     u8 itstate;
+    fpu_t fpu;
 } cpu_t;
 
 /* IT helpers: extract current cond and step state. */

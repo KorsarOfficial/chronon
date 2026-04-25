@@ -64,6 +64,12 @@ run_test_freertos() {
 }
 run_test_freertos test7_freertos "R0=00000014 R1=00000014"
 
+# test8: FPU (Cortex-M4F) — VLDR, VMUL, VADD, VSQRT, VDIV, VSUB, VNEG, VCVT, VMOV imm
+run_test test8_fpu "R0=00000005 R1=00000006 R2=00000001"
+
+# test9: FreeRTOS Queue producer/consumer Σ(1..10)=55
+run_test_freertos test9_freertos_ipc "R0=00000037 R1=0000000a"
+
 echo ""
 echo "===== $PASS passed, $FAIL failed ====="
 [ $FAIL -eq 0 ]

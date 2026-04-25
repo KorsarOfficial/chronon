@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "core/cpu.h"
 #include "core/bus.h"
 #include "core/decoder.h"
@@ -9,20 +10,45 @@
 
 extern bool execute(cpu_t* c, bus_t* bus, const insn_t* i);
 
-/* Priorities: SysTick > PendSV by default. Both pre-empt Thread mode when IRQs
-   are not masked. Within Handler mode, tail-chaining is handled implicitly
-   because we only enter a new exception when no other handler is running. */
+/* Direct-mapped decode cache: 4096 entries × (PC tag + decoded insn).
+   Hit rate on hot loops is near 100% — this skips re-decoding entirely. */
+#define DCACHE_SIZE 4096
+#define DCACHE_MASK (DCACHE_SIZE - 1)
+
+typedef struct { u32 tag; insn_t ins; bool valid; } dcache_e_t;
+
+static dcache_e_t g_dcache[DCACHE_SIZE];
+
+static void dcache_invalidate(void) {
+    memset(g_dcache, 0, sizeof(g_dcache));
+}
+
+FORCE_INLINE void cache_decode(bus_t* bus, addr_t pc, insn_t* out) {
+    u32 idx = (pc >> 1) & DCACHE_MASK;
+    dcache_e_t* e = &g_dcache[idx];
+    if (LIKELY(e->valid && e->tag == pc)) {
+        *out = e->ins;
+        return;
+    }
+    decode(bus, pc, out);
+    e->tag = pc;
+    e->ins = *out;
+    e->valid = true;
+}
+
 u64 run_steps_full(cpu_t* c, bus_t* bus, u64 max_steps,
                    systick_t* st, scb_t* scb) {
+    /* Each top-level run starts with a clean cache. Real systems use a
+       per-CPU cache; for tests this is simpler and correct. */
+    dcache_invalidate();
     u64 i = 0;
     for (; i < max_steps && !c->halted; ++i) {
         insn_t ins;
-        decode(bus, c->r[REG_PC], &ins);
+        cache_decode(bus, c->r[REG_PC], &ins);
         if (!execute(c, bus, &ins)) break;
 
         if (st) systick_tick(st, 1);
 
-        /* Only pre-empt Thread mode (no nested exceptions in this core). */
         if (c->mode == MODE_THREAD && !(c->primask & 1u)) {
             if (st && st->irq_pending) {
                 st->irq_pending = false;

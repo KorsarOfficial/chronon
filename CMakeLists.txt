@@ -31,9 +31,11 @@ set(CORE_SRC
     src/core/executor.c
     src/core/nvic.c
     src/core/run.c
+    src/core/fpu.c
     src/periph/uart.c
     src/periph/systick.c
     src/periph/scb.c
+    src/periph/mpu.c
 )
 
 add_library(cortex_m_core STATIC ${CORE_SRC})

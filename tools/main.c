@@ -8,6 +8,7 @@
 #include "periph/uart.h"
 #include "periph/systick.h"
 #include "periph/scb.h"
+#include "periph/mpu.h"
 
 extern u64 run_steps_full(cpu_t* c, bus_t* bus, u64 max_steps, systick_t* st, scb_t* scb);
 
@@ -56,6 +57,8 @@ int main(int argc, char** argv) {
     systick_attach(&bus, &systick);
     static scb_t scb = {0};
     scb_attach(&bus, &scb);
+    static mpu_t mpu = {0};
+    mpu_attach(&bus, &mpu);
     bus_load_blob(&bus, FLASH_BASE, blob, sz);
     free(blob);
 
