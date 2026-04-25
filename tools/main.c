@@ -18,8 +18,8 @@
 extern dwt_t* g_dwt_for_run;
 extern nvic_t* g_nvic_for_run;
 
-extern u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
-                            systick_t* st, scb_t* scb, gdb_t* gdb);
+extern u64 run_steps_full_gdb(cpu_t* c, bus_t* bus, u64 max_steps,
+                              systick_t* st, scb_t* scb, gdb_t* gdb);
 extern u64 run_steps_full(cpu_t* c, bus_t* bus, u64 max_steps, systick_t* st, scb_t* scb);
 
 /* Cortex-M memory layout defaults (ARM ARM B3):
@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
         else fprintf(stderr, "[gdb] failed to listen on :%d\n", gdb_port);
     }
 
-    u64 n = run_steps_full_g(&cpu, &bus, max_steps, &systick, &scb, g);
+    u64 n = run_steps_full_gdb(&cpu, &bus, max_steps, &systick, &scb, g);
     if (g) gdb_close(g);
 
     fprintf(stderr, "halted after %llu instructions\n", (unsigned long long)n);

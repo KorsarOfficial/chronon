@@ -49,8 +49,9 @@ FORCE_INLINE void cache_decode(bus_t* bus, addr_t pc, insn_t* out) {
     e->valid = true;
 }
 
-u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
-                     systick_t* st, scb_t* scb, gdb_t* gdb) {
+/* GDB-aware run (used by main.c and gdb integration). */
+u64 run_steps_full_gdb(cpu_t* c, bus_t* bus, u64 max_steps,
+                       systick_t* st, scb_t* scb, gdb_t* gdb) {
     dcache_invalidate();
     if (!g_jit_inited) { jit_init(&g_jit); g_jit_inited = 1; }
     u64 i = 0;
@@ -71,8 +72,54 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
                 if (st) systick_tick(st, (u32)jit_steps);
                 if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
                 i += jit_steps - 1;
-                goto check_irqs;
+                goto check_irqs_gdb;
             }
+        }
+        insn_t ins;
+        cache_decode(bus, c->r[REG_PC], &ins);
+        if (!execute(c, bus, &ins)) break;
+
+        if (st) systick_tick(st, 1);
+        if (g_dwt_for_run) dwt_tick(g_dwt_for_run);
+
+    check_irqs_gdb:
+        if (c->mode == MODE_THREAD && !(c->primask & 1u)) {
+            if (st && st->irq_pending) {
+                st->irq_pending = false;
+                exc_enter(c, bus, EXC_SYSTICK);
+                continue;
+            }
+            if (scb && scb->pendsv_pending) {
+                scb->pendsv_pending = false;
+                exc_enter(c, bus, EXC_PENDSV);
+                continue;
+            }
+            if (g_nvic_for_run) {
+                int irq = nvic_pick(g_nvic_for_run);
+                if (irq >= 0) {
+                    nvic_clear_pending(g_nvic_for_run, (u32)irq);
+                    nvic_set_active(g_nvic_for_run, (u32)irq);
+                    exc_enter(c, bus, (u8)(EXC_IRQ0 + irq));
+                    continue;
+                }
+            }
+        }
+    }
+    return i;
+}
+
+/* Run with explicit jit_t (TT determinism path: caller owns jit state). */
+u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
+                     systick_t* st, scb_t* scb, jit_t* g) {
+    dcache_invalidate();
+    u64 i = 0;
+    for (; i < max_steps && !c->halted; ++i) {
+        u64 jit_steps = 0;
+        if (g && jit_run(g, c, bus, execute, &jit_steps) && jit_steps > 0) {
+            if (st) systick_tick(st, (u32)jit_steps);
+            if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
+            i += jit_steps - 1;
+            goto check_irqs;
         }
         insn_t ins;
         cache_decode(bus, c->r[REG_PC], &ins);
@@ -109,7 +156,7 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
 
 u64 run_steps_full(cpu_t* c, bus_t* bus, u64 max_steps,
                    systick_t* st, scb_t* scb) {
-    return run_steps_full_g(c, bus, max_steps, st, scb, NULL);
+    return run_steps_full_gdb(c, bus, max_steps, st, scb, NULL);
 }
 
 u64 run_steps_st(cpu_t* c, bus_t* bus, u64 max_steps, systick_t* st) {
