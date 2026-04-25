@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 13
-Plan: 04 (next)
-Status: 13-01+13-02+13-03 complete; TT-01 determinism + TT-03/04 snapshot + TT-05 replay done; ready for 13-04 tt_t/rewind
-Last activity: 2026-04-26 — p13.03 TT-05 replay engine: ev_log_seek bsearch + tt_inject_event + run_until_cycle + tt_replay byte-eq
+Plan: 05 (next)
+Status: 13-01+13-02+13-03+13-04 complete; TT-01..TT-08 done; tt_t lifecycle + bsearch rewind + step_back + diff shipped
+Last activity: 2026-04-26 — p13.04 TT-06/07/08 tt_t lifecycle + bsearch rewind + step_back + diff <100ms@1M
 
 ## Performance Metrics
 
@@ -20,6 +20,7 @@ v1.0 shipped: 12 phases, 62 tests, ~30M IPS hybrid native JIT.
 p13.01: 3 tasks, 4 files created, 12 modified, 5->6 tests, 65 min.
 p13.02: 2 tasks, 1 file created, 3 modified, 6->8 tests, 30 min.
 p13.03: 2 tasks, 1 file created, 6 modified, 8->8 tests (snapshot tests already counted), 45 min.
+p13.04: 2 tasks, 1 file created, 3 modified, 8->9 tests, 35 min.
 
 ## Accumulated Context
 
@@ -35,6 +36,9 @@ p13.03: 2 tasks, 1 file created, 6 modified, 8->8 tests (snapshot tests already 
 - p13.02: snap_blob_t includes uart_state (rx_q/replay_mode); eth.bus zeroed on save, refilled on restore
 - p13.03: run_until_cycle in run.c (co-located with run_steps_full_g), declared in tt.h; run.h uses struct forward decls
 - p13.03: snap_blob_t ~263KB; must be static in tests, same as jit_t ~2MB
+- p13.04: tt_record_irq/uart_rx bodies replaced in-place (no weak override); targets in TT-06 test must be >= first snap cycle (stride boundary)
+- p13.04: tt_diff uses FILE* -> stdio.h added to tt.h; snap_entry_t defined in tt.h alongside full tt_t struct
+- p13.04: rewind mean latency 0.3ms at 1M history; bsearch 7 cmps + 0.14ms memcpy + worst-case 10K cycles forward replay
 
 ### Pending Todos
 
@@ -50,5 +54,5 @@ none.
 ## Session Continuity
 
 Last session: 2026-04-26
-Stopped at: Completed 13-03-PLAN.md
+Stopped at: Completed 13-04-PLAN.md
 Resume file: none
