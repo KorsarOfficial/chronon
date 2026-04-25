@@ -1003,6 +1003,78 @@ bool execute(cpu_t* c, bus_t* bus, const insn_t* i) {
         case OP_VDIV_S:
             c->fpu.reg.s[i->sd] = c->fpu.reg.s[i->sn] / c->fpu.reg.s[i->sm];
             break;
+        case OP_VNMUL_S:
+            c->fpu.reg.s[i->sd] = -(c->fpu.reg.s[i->sn] * c->fpu.reg.s[i->sm]);
+            break;
+        case OP_VMLA_S:
+            c->fpu.reg.s[i->sd] = c->fpu.reg.s[i->sd] + c->fpu.reg.s[i->sn] * c->fpu.reg.s[i->sm];
+            break;
+        case OP_VMLS_S:
+            c->fpu.reg.s[i->sd] = c->fpu.reg.s[i->sd] - c->fpu.reg.s[i->sn] * c->fpu.reg.s[i->sm];
+            break;
+        case OP_VNMLA_S:
+            c->fpu.reg.s[i->sd] = -c->fpu.reg.s[i->sd] - c->fpu.reg.s[i->sn] * c->fpu.reg.s[i->sm];
+            break;
+        case OP_VNMLS_S:
+            c->fpu.reg.s[i->sd] = -c->fpu.reg.s[i->sd] + c->fpu.reg.s[i->sn] * c->fpu.reg.s[i->sm];
+            break;
+        case OP_VFMA_S:
+            c->fpu.reg.s[i->sd] = __builtin_fmaf(c->fpu.reg.s[i->sn], c->fpu.reg.s[i->sm], c->fpu.reg.s[i->sd]);
+            break;
+        case OP_VFMS_S:
+            c->fpu.reg.s[i->sd] = __builtin_fmaf(-c->fpu.reg.s[i->sn], c->fpu.reg.s[i->sm], c->fpu.reg.s[i->sd]);
+            break;
+        case OP_VFNMA_S:
+            c->fpu.reg.s[i->sd] = __builtin_fmaf(c->fpu.reg.s[i->sn], c->fpu.reg.s[i->sm], -c->fpu.reg.s[i->sd]);
+            break;
+        case OP_VFNMS_S:
+            c->fpu.reg.s[i->sd] = __builtin_fmaf(-c->fpu.reg.s[i->sn], c->fpu.reg.s[i->sm], -c->fpu.reg.s[i->sd]);
+            break;
+
+        case OP_VPUSH: {
+            u32 cnt = i->imm;
+            addr_t sp = c->r[REG_SP] - cnt * 4;
+            c->r[REG_SP] = sp;
+            for (u32 k = 0; k < cnt; ++k) {
+                if (!bus_write(bus, sp + k * 4, 4, c->fpu.reg.u[i->sd + k])) {
+                    c->halted = true; return false;
+                }
+            }
+            break;
+        }
+        case OP_VPOP: {
+            u32 cnt = i->imm;
+            addr_t sp = c->r[REG_SP];
+            for (u32 k = 0; k < cnt; ++k) {
+                u32 v = 0;
+                if (!bus_read(bus, sp + k * 4, 4, &v)) { c->halted = true; return false; }
+                c->fpu.reg.u[i->sd + k] = v;
+            }
+            c->r[REG_SP] = sp + cnt * 4;
+            break;
+        }
+        case OP_VLDM:
+        case OP_VSTM: {
+            bool is_load = (i->op == OP_VLDM);
+            u32 cnt = i->imm;
+            addr_t base = c->r[i->rn];
+            addr_t a = i->add ? base : (base - cnt * 4);
+            addr_t start = a;
+            for (u32 k = 0; k < cnt; ++k) {
+                if (is_load) {
+                    u32 v = 0;
+                    if (!bus_read(bus, a, 4, &v)) { c->halted = true; return false; }
+                    c->fpu.reg.u[i->sd + k] = v;
+                } else {
+                    if (!bus_write(bus, a, 4, c->fpu.reg.u[i->sd + k])) {
+                        c->halted = true; return false;
+                    }
+                }
+                a += 4;
+            }
+            if (i->writeback) c->r[i->rn] = i->add ? a : start;
+            break;
+        }
         case OP_VMOV_S:
             c->fpu.reg.u[i->sd] = c->fpu.reg.u[i->sm];
             break;

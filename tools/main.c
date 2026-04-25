@@ -12,8 +12,10 @@
 #include "periph/stm32.h"
 #include "periph/dwt.h"
 #include "core/gdb.h"
+#include "core/nvic.h"
 
 extern dwt_t* g_dwt_for_run;
+extern nvic_t* g_nvic_for_run;
 
 extern u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
                             systick_t* st, scb_t* scb, gdb_t* gdb);
@@ -77,6 +79,9 @@ int main(int argc, char** argv) {
     static dwt_t dwt = {0};
     dwt_attach(&bus, &dwt);
     g_dwt_for_run = &dwt;
+    static nvic_t nvic = {0};
+    nvic_attach(&bus, &nvic);
+    g_nvic_for_run = &nvic;
     bus_load_blob(&bus, FLASH_BASE, blob, sz);
     free(blob);
 

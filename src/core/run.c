@@ -12,6 +12,8 @@
 
 extern dwt_t* g_dwt_for_run;
 dwt_t* g_dwt_for_run = NULL;
+extern nvic_t* g_nvic_for_run;
+nvic_t* g_nvic_for_run = NULL;
 
 extern bool execute(cpu_t* c, bus_t* bus, const insn_t* i);
 
@@ -73,6 +75,15 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
                 scb->pendsv_pending = false;
                 exc_enter(c, bus, EXC_PENDSV);
                 continue;
+            }
+            if (g_nvic_for_run) {
+                int irq = nvic_pick(g_nvic_for_run);
+                if (irq >= 0) {
+                    nvic_clear_pending(g_nvic_for_run, (u32)irq);
+                    nvic_set_active(g_nvic_for_run, (u32)irq);
+                    exc_enter(c, bus, (u8)(EXC_IRQ0 + irq));
+                    continue;
+                }
             }
         }
     }

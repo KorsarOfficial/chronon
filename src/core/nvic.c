@@ -1,5 +1,58 @@
 #include "core/nvic.h"
 
+/* === NVIC peripheral MMIO (ARM ARM B3.4) === */
+static u32 nvic_read(void* ctx, addr_t off, u32 size) {
+    (void)size;
+    nvic_t* n = (nvic_t*)ctx;
+    if (off < 0x80) return n->enable[(off >> 2) & 7];
+    if (off < 0x100) return n->enable[((off - 0x80) >> 2) & 7];
+    if (off < 0x180) return n->pending[((off - 0x100) >> 2) & 7];
+    if (off < 0x200) return n->pending[((off - 0x180) >> 2) & 7];
+    if (off < 0x280) return n->active[((off - 0x200) >> 2) & 7];
+    if (off >= 0x300 && off < 0x300 + NVIC_IRQ_LINES) return n->prio[off - 0x300];
+    return 0;
+}
+static void nvic_write(void* ctx, addr_t off, u32 v, u32 size) {
+    (void)size;
+    nvic_t* n = (nvic_t*)ctx;
+    if (off < 0x80)        n->enable[(off >> 2) & 7] |= v;
+    else if (off < 0x100)  n->enable[((off - 0x80) >> 2) & 7] &= ~v;
+    else if (off < 0x180)  n->pending[((off - 0x100) >> 2) & 7] |= v;
+    else if (off < 0x200)  n->pending[((off - 0x180) >> 2) & 7] &= ~v;
+    else if (off >= 0x300 && off < 0x300 + NVIC_IRQ_LINES) n->prio[off - 0x300] = (u8)v;
+}
+void nvic_set_pending(nvic_t* n, u32 irq) {
+    if (irq < NVIC_IRQ_LINES) n->pending[irq >> 5] |= (1u << (irq & 31));
+}
+void nvic_clear_pending(nvic_t* n, u32 irq) {
+    if (irq < NVIC_IRQ_LINES) n->pending[irq >> 5] &= ~(1u << (irq & 31));
+}
+void nvic_set_active(nvic_t* n, u32 irq) {
+    if (irq < NVIC_IRQ_LINES) n->active[irq >> 5] |= (1u << (irq & 31));
+}
+void nvic_clear_active(nvic_t* n, u32 irq) {
+    if (irq < NVIC_IRQ_LINES) n->active[irq >> 5] &= ~(1u << (irq & 31));
+}
+int nvic_pick(const nvic_t* n) {
+    int best = -1;
+    u8 best_prio = 0xFF;
+    for (u32 w = 0; w < 8; ++w) {
+        u32 ready = n->enable[w] & n->pending[w] & ~n->active[w];
+        while (ready) {
+            u32 b = __builtin_ctz(ready);
+            ready &= ready - 1;
+            u32 irq = w * 32 + b;
+            if (n->prio[irq] < best_prio) { best_prio = n->prio[irq]; best = (int)irq; }
+        }
+    }
+    return best;
+}
+int nvic_attach(struct bus_s* b, nvic_t* n) {
+    for (u32 i = 0; i < 8; ++i) { n->enable[i] = n->pending[i] = n->active[i] = 0; }
+    for (u32 i = 0; i < NVIC_IRQ_LINES; ++i) n->prio[i] = 0;
+    return bus_add_mmio(b, "nvic", NVIC_BASE, NVIC_SIZE, n, nvic_read, nvic_write);
+}
+
 /* Cortex-M exception entry / exit with MSP/PSP selection.
    ARM ARM B1.5.6 / B1.5.7. */
 
@@ -48,7 +101,12 @@ bool exc_enter(cpu_t* c, bus_t* b, u8 exc) {
     return true;
 }
 
+extern nvic_t* g_nvic_for_run;
 bool exc_return(cpu_t* c, bus_t* b, u32 exc_return) {
+    /* Clear active bit for the IRQ we are returning from. */
+    if (g_nvic_for_run && c->ipsr >= EXC_IRQ0 && c->ipsr < EXC_IRQ0 + NVIC_IRQ_LINES) {
+        nvic_clear_active(g_nvic_for_run, c->ipsr - EXC_IRQ0);
+    }
     /* Select where to pop from. */
     bool to_psp = (exc_return & 0xFu) == 0xDu;
     bool to_handler = (exc_return & 0xFu) == 0x1u;

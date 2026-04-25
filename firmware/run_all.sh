@@ -73,6 +73,12 @@ run_test_freertos test9_freertos_ipc "R0=00000037 R1=0000000a"
 # test10: STM32F103 Blue Pill blink — RCC + GPIOC PC13 + USART1
 run_test test10_stm32_blink "R0=00000005"
 
+# test11: NVIC external IRQs (IRQ0, IRQ1) with priorities
+run_test test11_nvic_irq "R0=00000001 R1=0000000a"
+
+# test12: DSP DFT N=8 with VFMA (Cortex-M4F -O2)
+run_test test12_dsp_fft "R0=00000004"
+
 echo ""
 echo "===== $PASS passed, $FAIL failed ====="
 [ $FAIL -eq 0 ]

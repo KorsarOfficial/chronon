@@ -764,6 +764,37 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
        Layout for VLDR/VSTR (w0 = 1110_110 P U D W Rn, w1 = Vd 1010 imm8):
          single Sd = (Vd << 1) | D
        For data-proc (VADD, VSUB, ...): w0 = 1110_1110 op0 D op1 Vn, w1 = Vd 1010 N op2 M 0 Vm */
+    /* VPUSH / VPOP / VLDM / VSTM — A5.3.16
+       Excludes VLDR/VSTR which have P=1 (bit[8]=1) AND W=0 (bit[5]=0). */
+    if ((w0 & 0xFE00u) == 0xEC00u && (((w1 >> 8) & 0xE) == 0xA)
+        && !(((w0 >> 8) & 1) && !((w0 >> 5) & 1))) {
+        u32 P = (w0 >> 8) & 1;
+        u32 U = (w0 >> 7) & 1;
+        u32 D = (w0 >> 6) & 1;
+        u32 W = (w0 >> 5) & 1;
+        u32 L = (w0 >> 4) & 1;
+        u32 Rn = w0 & 0xF;
+        u32 cp_dp = (w1 >> 8) & 1;       /* 0=single (1010), 1=double (1011) */
+        u32 Vd = (w1 >> 12) & 0xF;
+        u32 imm8 = w1 & 0xFF;
+        out->rn = (u8)Rn;
+        out->writeback = W != 0;
+        out->add = U != 0;
+        out->index = P != 0;
+        /* Start register and count of single-prec values to transfer. */
+        if (cp_dp == 0) {
+            out->sd = (u8)((Vd << 1) | D);
+            out->imm = imm8;             /* count of S regs */
+        } else {
+            out->sd = (u8)((D << 5) | (Vd << 1));
+            out->imm = imm8;             /* imm8 = 2*count_d → still imm8 single words */
+        }
+        if (Rn == 13 && P == 1 && U == 0 && W == 1 && L == 0)      out->op = OP_VPUSH;
+        else if (Rn == 13 && P == 0 && U == 1 && W == 1 && L == 1) out->op = OP_VPOP;
+        else                                                        out->op = L ? OP_VLDM : OP_VSTM;
+        return 4;
+    }
+
     /* VLDR/VSTR single — w0[15:8]=0xED, w1[11:8]=1010 */
     if ((w0 & 0xFF00u) == 0xED00u && ((w1 >> 8) & 0xF) == 0xA) {
         u32 U   = (w0 >> 7) & 1;
@@ -857,10 +888,21 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
             }
             return 4;
         }
-        /* VADD: op0=0011, VSUB: op0=0011 with op2=1, VMUL: op0=0010, VDIV: op0=1000 */
+        /* op_real (D-bit removed): bit[23,21,20] |= bit[7]=op (S/N etc.) */
+        /* VADD: op0=0011 op2=0, VSUB: op0=0011 op2=1
+           VMUL: op0=0010 op2=0, VNMUL: op0=0010 op2=1
+           VDIV: op0=1000 op2=0
+           VMLA: op0=0000 op2=0, VMLS: op0=0000 op2=1
+           VNMLA: op0=0001 op2=1, VNMLS: op0=0001 op2=0
+           VFMA: op0=1010 op2=0, VFMS: op0=1010 op2=1
+           VFNMS: op0=1001 op2=0, VFNMA: op0=1001 op2=1 */
         if (op0 == 0x3) { out->op = op2 ? OP_VSUB_S : OP_VADD_S; return 4; }
-        if (op0 == 0x2) { out->op = OP_VMUL_S; return 4; }
+        if (op0 == 0x2) { out->op = op2 ? OP_VNMUL_S : OP_VMUL_S; return 4; }
         if (op0 == 0x8) { out->op = OP_VDIV_S; return 4; }
+        if (op0 == 0x0) { out->op = op2 ? OP_VMLS_S : OP_VMLA_S; return 4; }
+        if (op0 == 0x1) { out->op = op2 ? OP_VNMLA_S : OP_VNMLS_S; return 4; }
+        if (op0 == 0xA) { out->op = op2 ? OP_VFMS_S : OP_VFMA_S; return 4; }
+        if (op0 == 0x9) { out->op = op2 ? OP_VFNMA_S : OP_VFNMS_S; return 4; }
         return 4;
     }
 
