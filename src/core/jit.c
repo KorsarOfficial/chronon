@@ -35,7 +35,10 @@ static bool is_terminator(opcode_t op) {
 }
 
 static jit_block_t* compile_block(jit_t* j, bus_t* b, u32 pc) {
-    if (j->n_blocks >= JIT_MAX_BLOCKS) return NULL;
+    if (j->n_blocks >= JIT_MAX_BLOCKS) {
+        /* Cache full: generation reset. All slots wiped; fresh compile from slot 0. */
+        jit_flush(j);
+    }
     jit_block_t* bk = &j->blocks[j->n_blocks];
     bk->pc_start = pc;
     bk->n_ins = 0;
@@ -96,6 +99,22 @@ bool jit_run(jit_t* j, cpu_t* c, bus_t* b, exec_fn execute, u64* out_steps) {
     j->jit_steps += steps;
     *out_steps = steps;
     return steps > 0;
+}
+
+bool jit_run_chained(jit_t* j, cpu_t* c, bus_t* b, exec_fn execute,
+                     u64 max_steps, u64* out_steps) {
+    u64 total = 0u;
+    while (!c->halted && total < max_steps) {
+        u64 remaining = max_steps - total;
+        /* Exit early when budget is too tight to avoid overshooting by >31 cycles. */
+        if (remaining < (u64)JIT_MAX_BLOCK_LEN) break;
+        u64 steps = 0u;
+        if (!jit_run(j, c, b, execute, &steps)) break;
+        if (steps == 0u) break;
+        total += steps;
+    }
+    *out_steps = total;
+    return total > 0u;
 }
 
 void jit_reset_counters(jit_t* g) {

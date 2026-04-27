@@ -49,6 +49,14 @@ void jit_init(jit_t* j);
 /* Try to fast-execute starting at PC. Returns true if at least one insn ran
    via JIT cache; updates *out_steps. */
 bool jit_run(jit_t* j, cpu_t* c, bus_t* b, exec_fn execute, u64* out_steps);
+/* Tight chained dispatch: stays in the same C-frame across multiple compiled
+   block boundaries. Loops while cpu not halted, total < max_steps, and inner
+   jit_run returns true. Exits when remaining < JIT_MAX_BLOCK_LEN to bound
+   overshoot to at most JIT_MAX_BLOCK_LEN-1 = 31 ARM cycles.
+   On exit: *out_steps = sum of ARM insns across all chained blocks.
+   Returns true iff at least one block ran. */
+bool jit_run_chained(jit_t* j, cpu_t* c, bus_t* b, exec_fn execute,
+                     u64 max_steps, u64* out_steps);
 void jit_reset_counters(jit_t* g);
 /* Full TB cache wipe: zero n_blocks, lookup_n, cg.used, counters[], lookup_idx[], lookup_pc[].
    Called from snap_restore (TT safety) and from compile_block when n_blocks
