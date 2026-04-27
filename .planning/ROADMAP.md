@@ -1,4 +1,4 @@
-# Roadmap: meridian v2.0
+# Roadmap: chronon v2.0
 
 ## Overview
 
@@ -11,7 +11,7 @@ Phases 15-17 are the three product faces (web learn / CI / distribution).
 - [ ] **Phase 14: JIT Depth** — direct chaining + LDR/STR native + flags via LEA
 - [ ] **Phase 15: WASM + Web IDE** — emscripten port + Monaco editor + lessons
 - [ ] **Phase 16: Python API + CI** — pytest plugin + GitHub Action + Docker
-- [ ] **Phase 17: Landing & Distribution** — meridian.dev + release pipeline
+- [ ] **Phase 17: Landing & Distribution** — chronon.dev + release pipeline
 
 ## Phase Details
 
@@ -70,7 +70,7 @@ firmware (FreeRTOS, DSP) without falling back to interpreter.
 ### Phase 15: WASM + Web IDE
 
 **Goal:** emulator runs in browser via WASM. Web IDE is the educational
-front-end (meridian-learn product face).
+front-end (chronon-learn product face).
 
 **Depends on:** Phase 13 (clean determinism makes WASM port simpler).
 **Requirements:** WEB-01..WEB-06
@@ -88,21 +88,21 @@ front-end (meridian-learn product face).
 - 15-02: web debug bridge (postMessage replaces TCP RSP)
 - 15-03: web IDE shell (React/Svelte) with editor + run + regs
 - 15-04: 5 lessons + auto-grader
-- 15-05: hosted demo on meridian.dev (or vercel preview)
+- 15-05: hosted demo on chronon.dev (or vercel preview)
 
 ---
 
 ### Phase 16: Python API + CI Runner
 
 **Goal:** Python bindings, pytest plugin, Docker image, GitHub Action.
-This is the meridian-ci product face.
+This is the chronon-ci product face.
 
 **Depends on:** Phase 13 (snapshot/restore exposed in API).
 **Requirements:** CI-01..CI-06
 
 **Success criteria:**
-1. pip install meridian (or local wheel) works
-2. import meridian; Board("stm32f407").flash(...).run() returns exit cause
+1. pip install chronon (or local wheel) works
+2. import chronon; Board("stm32f407").flash(...).run() returns exit cause
 3. pytest can assert on UART output, register state, GPIO toggles
 4. Docker image under 50MB, runs firmware test on stdin/stdout
 5. GitHub Action sample repo passes a 3-test suite under 30s
@@ -118,13 +118,13 @@ This is the meridian-ci product face.
 
 ### Phase 17: Landing & Distribution
 
-**Goal:** meridian.dev live, release pipeline, docs.
+**Goal:** chronon.dev live, release pipeline, docs.
 
 **Depends on:** Phases 13-16 (need product to land).
 **Requirements:** DIST-01..DIST-04
 
 **Success criteria:**
-1. meridian.dev landing page resolves with demo embed + install instructions
+1. chronon.dev landing page resolves with demo embed + install instructions
 2. README.md has architecture diagram, ISA table, build/run, link to lessons
 3. GitHub releases with single-binary tarballs for linux/macos/windows
 4. CI workflow builds + tests + attaches release artifacts on tag push

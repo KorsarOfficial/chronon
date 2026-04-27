@@ -17,4 +17,4 @@
 ## v2.0 — Time-Travel + Product Platform (active)
 
 Goal: turn the engine into a usable product.
-Three faces on one deterministic core: meridian-ci, meridian-learn, meridian-probe.
+Three faces on one deterministic core: chronon-ci, chronon-learn, chronon-probe.

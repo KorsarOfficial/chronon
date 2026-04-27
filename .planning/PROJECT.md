@@ -1,4 +1,4 @@
-# meridian (cortex-m-emu)
+# chronon
 
 ## What This Is
 
@@ -54,9 +54,9 @@ project to potentially competitive. Time-travel is the unique USP — neither
 QEMU nor Renode does proper rewind for ARM Cortex-M.
 
 Three product paths share one kernel:
-- meridian-ci (B2B): CI runner replaces hardware farms
-- meridian-learn (B2C): web IDE for ARM/RTOS courses
-- meridian-probe (B2B-niche): security research with replay
+- chronon-ci (B2B): CI runner replaces hardware farms
+- chronon-learn (B2C): web IDE for ARM/RTOS courses
+- chronon-probe (B2B-niche): security research with replay
 
 ## Constraints
 
