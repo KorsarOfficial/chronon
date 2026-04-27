@@ -66,6 +66,7 @@ firmware (FreeRTOS, DSP) without falling back to interpreter.
 - [ ] 14-04-PLAN.md — native B.cond/B.uncond/T32_BL; APSR -> EFLAGS via pushfq+bt/setc; jcc rel32 (Wave 4)
 - [ ] 14-05-PLAN.md — pseudo-chain dispatch jit_run_chained + n_blocks overflow generation reset (Wave 5)
 - [ ] 14-06-PLAN.md — bench harness QPC + test_jit_bench 5M test7 <50ms regression (Wave 6)
+- [ ] 14-07-PLAN.md — gap closure JIT-06: native PUSH/POP/LDM/STM + B.cond fast path (no pushfq/popfq); 100M+ IPS / <50ms hard-gated (Wave 7, gap closure)
 
 ---
 
@@ -142,12 +143,12 @@ This is the lecerf-ci product face.
 | Phase | Plans | Status |
 |-------|-------|--------|
 | 13. Time-Travel Kernel | 6 | Shipped 2026-04-27 (8/8 TT, 11 ctest + 14 fw) |
-| 14. JIT Depth          | 6 | Planned 2026-04-26 (6 plans, 6 waves; ready for /gsd:execute-phase 14) |
+| 14. JIT Depth          | 7 | 6 shipped 2026-04-26 (5/6 verified; JIT-06 gap); 14-07 gap-closure planned 2026-04-26 (Wave 7; --gaps-only execute) |
 | 15. WASM + Web IDE     | 5 | Not started |
 | 16. Python API + CI    | 5 | Not started |
 | 17. Landing & Dist     | 4 | Not started |
 
-**Total:** 26 plans across 5 phases.
+**Total:** 27 plans across 5 phases.
 
 ## Wave Plan: Phase 13
 
@@ -169,3 +170,4 @@ This is the lecerf-ci product face.
 | 4    | 14-04  | 14-03      | B.cond / B.uncond / T32_BL with APSR -> EFLAGS reconstruction        |
 | 5    | 14-05  | 14-04      | jit_run_chained pseudo-chain + generation-reset eviction              |
 | 6    | 14-06  | 14-05      | Bench harness QPC + test_jit_bench 5M < 50ms regression              |
+| 7    | 14-07  | 14-06      | Gap closure JIT-06: native PUSH/POP/LDM/STM + B.cond fast path; 100M+ IPS hard-gated  |
