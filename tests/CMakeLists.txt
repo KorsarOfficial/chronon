@@ -43,3 +43,7 @@ add_test(NAME tt_firmware COMMAND test_tt_firmware)
 add_executable(test_tt_eth_replay test_tt_eth_replay.c)
 target_link_libraries(test_tt_eth_replay PRIVATE cortex_m_core)
 add_test(NAME tt_eth_replay COMMAND test_tt_eth_replay)
+
+add_executable(test_jit_abi test_jit_abi.c)
+target_link_libraries(test_jit_abi PRIVATE cortex_m_core)
+add_test(NAME jit_abi COMMAND test_jit_abi)
