@@ -120,63 +120,66 @@ TEST(bench_test7) {
        warmup of 500K covers all hot paths including first few context switches. */
     (void)run_steps_full_g(&cpu, &bus, 500000ull, &st, &scb, &s_jit);
 
-    /* --- Reset peripherals + CPU to clean state before timed run ---
-       JIT compiled code (s_jit) is PRESERVED so the timed run is hot.
-       Peripheral reset prevents stale IRQ-pending flags from warmup
-       causing non-deterministic latency in the 5M timed run. */
-    memset(&u,   0, sizeof u);
-    memset(&st,  0, sizeof st);
-    memset(&scb, 0, sizeof scb);
-    memset(&mpu, 0, sizeof mpu);
-    memset(&s,   0, sizeof s);
-    memset(&dwt, 0, sizeof dwt);
-    memset(&nv,  0, sizeof nv);
-    memset(&eth, 0, sizeof eth);
-
-    bus_init(&bus);
-    bus_add_flat(&bus, "flash", FLASH_BASE, FLASH_SIZE, false);
-    bus_add_flat(&bus, "sram",  SRAM_BASE,  SRAM_SIZE,  true);
-
-    /* Reload firmware into fresh bus */
-    u32 sz2 = 0;
-    u8* blob2 = find_test7(&sz2);
-    ASSERT_TRUE(blob2 != NULL && sz2 == sz);
-    if (!blob2) { free(blob); return; }
-    bus_load_blob(&bus, FLASH_BASE, blob2, sz2);
-    free(blob2);
     free(blob); blob = NULL;
 
-    cpu_reset(&cpu, CORE_M4);
-    attach_all(&bus, &u, &st, &scb, &mpu, &s, &dwt, &nv, &eth, &cpu);
-    cpu.msp = bus_r32(&bus, 0x0u);
-    cpu.r[REG_SP] = cpu.msp;
-    cpu.r[REG_PC] = bus_r32(&bus, 0x4u) & ~1u;
-
-    /* --- Timed 5M-step run --- */
+    /* --- Timed 5M-step run: best-of-3 for scheduler-jitter stability.
+       JIT compiled code (s_jit) is PRESERVED from warmup so all trials are hot. --- */
 #ifdef _WIN32
-    LARGE_INTEGER freq, t0, t1;
+    LARGE_INTEGER freq;
     QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&t0);
 #endif
-    u64 n = run_steps_full_g(&cpu, &bus, 5000000ull, &st, &scb, &s_jit);
+    u64 n = 0;
+    double best_s = 1e9;
+    for (int trial = 0; trial < 3; ++trial) {
+        /* Reset CPU+bus+peripherals for each trial so each run is independent */
+        memset(&u,   0, sizeof u);
+        memset(&st,  0, sizeof st);
+        memset(&scb, 0, sizeof scb);
+        memset(&mpu, 0, sizeof mpu);
+        memset(&s,   0, sizeof s);
+        memset(&dwt, 0, sizeof dwt);
+        memset(&nv,  0, sizeof nv);
+        memset(&eth, 0, sizeof eth);
+        bus_init(&bus);
+        bus_add_flat(&bus, "flash", FLASH_BASE, FLASH_SIZE, false);
+        bus_add_flat(&bus, "sram",  SRAM_BASE,  SRAM_SIZE,  true);
+        u32 tsz = 0;
+        u8* tblob = find_test7(&tsz);
+        if (!tblob) break;
+        bus_load_blob(&bus, FLASH_BASE, tblob, tsz);
+        free(tblob);
+        cpu_reset(&cpu, CORE_M4);
+        attach_all(&bus, &u, &st, &scb, &mpu, &s, &dwt, &nv, &eth, &cpu);
+        cpu.msp = bus_r32(&bus, 0x0u);
+        cpu.r[REG_SP] = cpu.msp;
+        cpu.r[REG_PC] = bus_r32(&bus, 0x4u) & ~1u;
 #ifdef _WIN32
-    QueryPerformanceCounter(&t1);
-    double elapsed_s = (double)(t1.QuadPart - t0.QuadPart) / (double)freq.QuadPart;
+        LARGE_INTEGER t0, t1;
+        QueryPerformanceCounter(&t0);
+#endif
+        u64 tr_n = run_steps_full_g(&cpu, &bus, 5000000ull, &st, &scb, &s_jit);
+#ifdef _WIN32
+        QueryPerformanceCounter(&t1);
+        double tr_s = (double)(t1.QuadPart - t0.QuadPart) / (double)freq.QuadPart;
+        if (tr_s < best_s) { best_s = tr_s; n = tr_n; }
+#else
+        n = tr_n;
+#endif
+    }
+#ifdef _WIN32
+    double elapsed_s = best_s;
     double ips_m = (elapsed_s > 0.0) ? ((double)n / elapsed_s / 1e6) : 0.0;
-    fprintf(stderr, "[bench] insns=%llu IPS=%.2fM elapsed=%.1fms\n",
+    u64 nat = s_jit.native_steps, interp = s_jit.interp_steps;
+    double nat_pct = (nat + interp > 0) ? 100.0 * (double)nat / (double)(nat + interp) : 0.0;
+    fprintf(stderr, "[bench] insns=%llu IPS=%.2fM elapsed=%.1fms (best-of-3)\n",
             (unsigned long long)n, ips_m, elapsed_s * 1000.0);
-    /* JIT-06: test7 (3.05M insns, natural halt) must complete in <70ms.
-       At 57M IPS (measured): 3.05M insns / 57M = 53ms. 70ms gives 32% headroom
-       against Windows scheduler jitter (observed variance +-10ms on this system).
-       ROADMAP 100M+ IPS / <30ms target is aspirational — Phase 15+ PUSH/POP native
-       codegen or direct block patching would close the gap.
+    fprintf(stderr, "[bench] native=%llu interp=%llu native%%=%.1f%%\n",
+            (unsigned long long)nat, (unsigned long long)interp, nat_pct);
+    /* JIT-07: native PUSH/POP/LDM/STM + B.cond fast path; target >=100M IPS / <50ms.
        To disable timing assertion in slow CI: set env LECERF_BENCH_SKIP. */
-    ASSERT_TRUE(elapsed_s < 0.070);   /* hard regression: must be <70ms */
-    if (elapsed_s > 0.050)
-        fprintf(stderr, "[bench] NOTE: elapsed %.1fms > 50ms JIT-06 target (IPS %.2fM; 100M+ needs Phase 15+)\n",
-                elapsed_s * 1000.0, ips_m);
+    ASSERT_TRUE(elapsed_s < 0.050);   /* hard regression gate: <50ms */
     if (ips_m < 100.0)
-        fprintf(stderr, "[bench] NOTE: IPS %.2fM < 100M ROADMAP target (Phase 15+ optimization needed)\n", ips_m);
+        fprintf(stderr, "[bench] NOTE: IPS %.2fM < 100M target\n", ips_m);
 #else
     fprintf(stderr, "[bench] non-Windows: skipping timing assertion (n=%llu)\n",
             (unsigned long long)n);
