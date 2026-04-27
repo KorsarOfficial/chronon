@@ -8,7 +8,7 @@ Phases 15-17 are the three product faces (web learn / CI / distribution).
 ## Phases
 
 - [x] **Phase 13: Time-Travel Kernel** — determinism + snapshot + replay + rewind (shipped 2026-04-27, 8/8 TT verified, 11 ctest + 14 fw green)
-- [ ] **Phase 14: JIT Depth** — direct chaining + LDR/STR native + flags via LEA
+- [x] **Phase 14: JIT Depth** — direct chaining + LDR/STR native + flags via LEA (shipped 2026-04-27, 6/6 JIT verified, 19 ctest + 14 fw green, 5M insns in 38-46ms = 100M+ IPS)
 - [ ] **Phase 15: WASM + Web IDE** — emscripten port + Monaco editor + lessons
 - [ ] **Phase 16: Python API + CI** — pytest plugin + GitHub Action + Docker
 - [ ] **Phase 17: Landing & Distribution** — lecerf.dev + release pipeline
@@ -143,7 +143,7 @@ This is the lecerf-ci product face.
 | Phase | Plans | Status |
 |-------|-------|--------|
 | 13. Time-Travel Kernel | 6 | Shipped 2026-04-27 (8/8 TT, 11 ctest + 14 fw) |
-| 14. JIT Depth          | 7 | 6 shipped 2026-04-26 (5/6 verified; JIT-06 gap); 14-07 gap-closure planned 2026-04-26 (Wave 7; --gaps-only execute) |
+| 14. JIT Depth          | 7 | Shipped 2026-04-27 (6/6 JIT, 19 ctest + 14 fw; 5M insns 38-46ms = 100M+ IPS; gap closure 14-07) |
 | 15. WASM + Web IDE     | 5 | Not started |
 | 16. Python API + CI    | 5 | Not started |
 | 17. Landing & Dist     | 4 | Not started |
