@@ -58,6 +58,21 @@ void tt_record_uart_rx(u64 cycle, u8 byte) {
     if (g_tt && !g_replay_mode) ev_log_append(&g_tt->log, cycle, EVENT_UART_RX, (u32)byte);
 }
 
+u32 tt_record_eth_rx(u64 cyc, const u8* fr, u32 ln) {
+    if (!g_tt || g_replay_mode || !fr || !ln) return 0xFFFFFFFFu;
+    if (g_tt->n_frames >= TT_ETH_MAX) return 0xFFFFFFFFu;
+    u32 cap = ln < TT_ETH_MTU ? ln : TT_ETH_MTU;
+    u32 id  = g_tt->n_frames++;
+    eth_frame_t* f = &g_tt->frames[id];
+    f->len = cap;
+    memcpy(f->buf, fr, cap);
+    if (!ev_log_append(&g_tt->log, cyc, EVENT_ETH_RX, id)) {
+        g_tt->n_frames--;
+        return 0xFFFFFFFFu;
+    }
+    return id;
+}
+
 /* ---- Snapshot module (13-02) ---- */
 
 jit_t* g_jit_for_tt = NULL;
@@ -158,8 +173,15 @@ void tt_inject_event(cpu_t* c, bus_t* bus, tt_periph_t* p, const ev_t* e) {
         case EVENT_IRQ_INJECT:
             if (p->nv) nvic_set_pending(p->nv, e->payload);
             break;
-        case EVENT_ETH_RX:
+        case EVENT_ETH_RX: {
+            if (!p->eth || !g_tt) break;
+            u32 id = e->payload;
+            if (id >= g_tt->n_frames) break;
+            const eth_frame_t* fr = &g_tt->frames[id];
+            if (!fr->len) break;
+            eth_inject_rx(p->eth, fr->buf, fr->len);
             break;
+        }
         default: break;
     }
 }
@@ -191,6 +213,9 @@ tt_t* tt_create(u32 stride, u32 max_snaps) {
     tt->idx   = (snap_entry_t*)calloc(max_snaps, sizeof(snap_entry_t));
     if (!tt->snaps || !tt->idx) { tt_destroy(tt); return NULL; }
     ev_log_init(&tt->log, 16u);
+    tt->frames   = (eth_frame_t*)calloc(TT_ETH_MAX, sizeof(eth_frame_t));
+    tt->n_frames = 0u;
+    if (!tt->frames) { tt_destroy(tt); return NULL; }
     g_tt = tt;
     return tt;
 }
@@ -198,6 +223,7 @@ tt_t* tt_create(u32 stride, u32 max_snaps) {
 void tt_destroy(tt_t* tt) {
     if (!tt) return;
     if (g_tt == tt) g_tt = NULL;
+    free(tt->frames);
     free(tt->snaps);
     free(tt->idx);
     ev_log_free(&tt->log);

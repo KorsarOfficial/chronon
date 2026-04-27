@@ -78,3 +78,10 @@ int eth_attach(bus_t* b, eth_t* e) {
     e->bus = b;
     return bus_add_mmio(b, "eth", ETH_BASE, ETH_SIZE, e, eth_read, eth_write);
 }
+
+void eth_inject_rx(eth_t* e, const u8* fr, u32 ln) {
+    if (!e || !e->bus || !e->rx_addr || !fr || !ln) return;
+    for (u32 i = 0; i < ln; ++i) bus_write(e->bus, e->rx_addr + i, 1, fr[i]);
+    e->rx_len  = ln;
+    e->status |= 0x3u;
+}

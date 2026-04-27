@@ -31,7 +31,14 @@ typedef struct ev_s {
 
 _Static_assert(sizeof(ev_t) == 16, "ev_t must be 16B");
 
-#define TT_LOG_MAX 65536u
+#define TT_LOG_MAX  65536u
+#define TT_ETH_MAX  256u    /* max recorded ETH frames per tt session */
+#define TT_ETH_MTU  1600u   /* per-frame byte cap (Ethernet+jumbo headroom) */
+
+typedef struct eth_frame_s {
+    u32 len;           /* actual bytes in buf, 0 = unused slot */
+    u8  buf[TT_ETH_MTU];
+} eth_frame_t;
 
 typedef struct ev_log_s {
     ev_t* buf;   /* malloc-owned, capacity = cap */
@@ -68,6 +75,8 @@ typedef struct tt_s {
     snap_entry_t* idx;    /* sorted by cycle, parallel array */
     u32 n_snaps;
     ev_log_t log;
+    eth_frame_t* frames; /* side-blob store for EVENT_ETH_RX payloads; not part of snap_blob_t */
+    u32 n_frames;
 } tt_t;
 
 /* Event log */
@@ -79,6 +88,12 @@ u32  ev_log_seek  (const ev_log_t* lg, u64 cycle); /* lower_bound by cycle */
 /* Weak record hooks; 13-04 provides strong overrides. */
 void tt_record_irq    (u64 cycle, u8 irq);
 void tt_record_uart_rx(u64 cycle, u8 byte);
+
+/* Record an inbound ETH frame: copies frame bytes into tt->frames[],
+   appends ev_log entry with payload = frame_id (u32 index).
+   No-op when g_tt is NULL or g_replay_mode is true.
+   Returns frame_id on success, UINT32_MAX on capacity exhaustion. */
+u32 tt_record_eth_rx(u64 cycle, const u8* frame, u32 len);
 
 /* Module-global tt pointer used by uart/nvic without threading tt through every call.
    NULL = no recording. Set by tt_create in 13-04. */

@@ -30,4 +30,11 @@ typedef struct eth_s {
 
 int eth_attach(struct bus_s* b, eth_t* e);
 
+/* Externally-driven RX entrypoint. Copies up to len bytes from frame[] into
+   the firmware-mapped RX buffer at e->rx_addr (via bus_write). Sets rx_len
+   and status |= 0x3 (RX_READY|TX_DONE bits). No-op if e->rx_addr == 0 or
+   bus is NULL. Used by both record-time host driver (via tt_record_eth_rx)
+   and replay-time tt_inject_event. */
+void eth_inject_rx(eth_t* e, const u8* frame, u32 len);
+
 #endif
