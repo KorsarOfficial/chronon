@@ -1,4 +1,4 @@
-# chronon
+# LECERF
 
 ## What This Is
 
@@ -54,9 +54,9 @@ project to potentially competitive. Time-travel is the unique USP — neither
 QEMU nor Renode does proper rewind for ARM Cortex-M.
 
 Three product paths share one kernel:
-- chronon-ci (B2B): CI runner replaces hardware farms
-- chronon-learn (B2C): web IDE for ARM/RTOS courses
-- chronon-probe (B2B-niche): security research with replay
+- lecerf-ci (B2B): CI runner replaces hardware farms
+- lecerf-learn (B2C): web IDE for ARM/RTOS courses
+- lecerf-probe (B2B-niche): security research with replay
 
 ## Constraints
 

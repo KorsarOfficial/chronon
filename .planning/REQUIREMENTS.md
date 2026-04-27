@@ -1,4 +1,4 @@
-# Requirements: chronon
+# Requirements: LECERF
 
 **Defined:** 2026-04-26
 **Core Value:** f(state, time, events) -> state' deterministic, fast, snapshotable, reversible
@@ -40,16 +40,16 @@ See MILESTONES.md. 62 tests green.
 
 ### Python API + CI Runner
 
-- [ ] **CI-01**: Python module: import chronon; b = chronon.Board("stm32f407"); b.flash(file)
+- [ ] **CI-01**: Python module: import lecerf; b = LECERF.Board("stm32f407"); b.flash(file)
 - [ ] **CI-02**: b.run(timeout_ms) returns exit cause (halt / timeout / fault)
 - [ ] **CI-03**: b.uart.output() / b.gpio[port][pin].value / b.cpu.r[N] readable from Python
 - [ ] **CI-04**: pytest plugin: pytest tests/ runs every test_*.py against firmware
-- [ ] **CI-05**: GitHub Action: chronon/runner@v1 with board+firmware+test inputs
-- [ ] **CI-06**: docker image chronon/runner:latest under 50MB, single binary inside
+- [ ] **CI-05**: GitHub Action: LECERF/runner@v1 with board+firmware+test inputs
+- [ ] **CI-06**: docker image LECERF/runner:latest under 50MB, single binary inside
 
 ### Landing & Distribution
 
-- [ ] **DIST-01**: chronon.dev landing page with demo, docs, install
+- [ ] **DIST-01**: lecerf.dev landing page with demo, docs, install
 - [ ] **DIST-02**: README.md final version with architecture diagram + roadmap
 - [ ] **DIST-03**: GitHub repo public with MIT license + CI workflow + release tags
 - [ ] **DIST-04**: single-binary releases for Linux/macOS/Windows (CI builds)

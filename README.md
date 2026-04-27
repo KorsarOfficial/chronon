@@ -1,4 +1,4 @@
-# chronon
+# LECERF
 
 Full-system ARM Cortex-M emulator in pure C11 with **time-travel** (snapshot
 + rewind + replay) and a real x86-64 JIT (`mmap` RWX, ~30M IPS hybrid).
@@ -12,7 +12,7 @@ firmware.bin
     |
     v
 +------------------------------------------------------------+
-| chronon core                                              |
+| LECERF core                                              |
 |                                                            |
 |  fetch -> dcache -> decode -> exec   (Thumb-1 / Thumb-2)   |
 |                       |                                    |
@@ -36,7 +36,7 @@ firmware.bin
 
 ## What makes it different
 
-| Feature                          | chronon  | QEMU-system-arm | Renode |
+| Feature                          | LECERF  | QEMU-system-arm | Renode |
 |----------------------------------|-----------|-----------------|--------|
 | Cortex-M ISA + VFPv4-SP          | yes       | yes             | yes    |
 | Boots FreeRTOS unmodified        | yes       | yes             | yes    |
@@ -258,7 +258,7 @@ arm-none-eabi-gdb firmware.elf
   native LDR/STR + flag-setters via LEA + `B.cond` -> `jcc`)
 - [ ] **Phase 15 — WASM + Web IDE** (emscripten + Monaco editor + lessons)
 - [ ] **Phase 16 — Python API + CI** (pytest plugin + Docker + GitHub Action)
-- [ ] **Phase 17 — Landing & Distribution** (release pipeline + chronon.dev)
+- [ ] **Phase 17 — Landing & Distribution** (release pipeline + lecerf.dev)
 
 ## License
 
