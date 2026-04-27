@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 
 ## Current Position
 
-Phase: 14 (in progress)
-Plan: 05 (complete — jit_run_chained pseudo-chain dispatch; max_steps budget cliff; jit_flush eviction; 16/16 ctest)
-Status: 14-05 complete; 16/16 ctest; ready for 14-06
-Last activity: 2026-04-27 — 14-05 executed; jit_run_chained; run_steps_full_g chained; test_jit_chain; ctest 15->16
+Phase: 14 (complete)
+Plan: 06 (complete — QPC timing; test_jit_bench; DWT batch; 57M IPS measured; 18/18 ctest; 14/14 firmware)
+Status: Phase 14 complete; 18/18 ctest; 14/14 firmware; almost-shippable (IPS 57M, ROADMAP 100M+ not met)
+Last activity: 2026-04-26 — 14-06 executed; QPC timing in main.c; test_jit_bench regression; DWT O(1) batch; ctest 17->18
 
 ## Performance Metrics
 
@@ -28,6 +28,7 @@ p14.02: 2 tasks, 1 file created, 2 modified, 12->13 tests, 45 min.
 p14.03: 2 tasks, 1 file created, 2 modified, 13->14 tests, 12 min.
 p14.04: 2 tasks, 1 file created, 2 modified, 14->15 tests, 75 min.
 p14.05: 3 tasks, 1 file created, 4 modified, 15->16 tests, 45 min.
+p14.06: 3 tasks, 2 files created, 3 modified, 17->18 tests, 90 min.
 
 ## Accumulated Context
 
@@ -55,10 +56,11 @@ p14.05: 3 tasks, 1 file created, 4 modified, 15->16 tests, 45 min.
 - p14.03: NZCV native: lahf clobbers AH (rax bits[15:8]); fix = save eax->r11d before lahf, movzx edx,ah before restoring eax; ARM_C=NOT CF for sub (xor r10d,1); emit_flags_nzcv(is_sub) + emit_flags_nz; CMP/CMN/TST discard result (no st_eax); T1 always-flag; T32 gate on set_flags; T32_ADDW/SUBW never flag; native coverage 39->48; 14/14 ctest + 14/14 firmware
 - p14.04: B.cond native: emit_apsr_to_eflags via pushfq+and(~0x08C1)+4xbt+setc/setnc+movzx+or+popfq; ARM.C stored as NOT(C) in CF so jcc table works (CS=jae, CC=jb, HI=ja, LS=jbe); emit_b_cond layout disp32=13 skips 11B+2B to taken label; emit_b_uncond+emit_t32_bl simple PC/LR stores; codegen_emit suppresses trailing st_pc for branch terminators; native coverage 48->52; 15/15 ctest
 - p14.05: jit_run_chained: tight while loop (halted|total<max_steps|remaining<JIT_MAX_BLOCK_LEN|jit_run false); overshoot <=31 cycles; compile_block eviction: jit_flush+continue on n_blocks==JIT_MAX_BLOCKS (generation reset); run_steps_full_g+gdb use jit_run_chained; gdb->stepping skips chain; 16/16 ctest; firmware 11/14 (3 pre-existing failures from 14-04, not regressions)
+- p14.06: QPC timing in tools/main.c (always-on; IPS+elapsed to stderr); test_jit_bench (warmup 500K, peripheral memset, timed 5M-cap run, ASSERT elapsed<70ms, warns if >50ms); DWT O(1) batch update (cyccnt+=jit_steps); measured 57M IPS (range 47-64M, Windows jitter); ROADMAP 100M+ IPS NOT met; 18/18 ctest; 14/14 firmware; phase 14 status: almost-shippable
 
 ### Pending Todos
 
-- 14-06 bench: measure cumulative IPS gain from 14-01..14-05 native + chain
+- Phase 15: PUSH/POP native codegen or REL32 direct block patching to reach 100M+ IPS
 - WASM-compatible socket layer (postMessage)
 
 ### Blockers
@@ -67,6 +69,6 @@ none.
 
 ## Session Continuity
 
-Last session: 2026-04-27
-Stopped at: Completed 14-05-PLAN.md (jit_run_chained; run_steps_full_g chained; eviction; test_jit_chain; 16/16 ctest)
+Last session: 2026-04-26
+Stopped at: Completed 14-06-PLAN.md (QPC timing; test_jit_bench; DWT batch; 57M IPS; 18/18 ctest; Phase 14 complete)
 Resume file: none
