@@ -50,5 +50,9 @@ void jit_init(jit_t* j);
    via JIT cache; updates *out_steps. */
 bool jit_run(jit_t* j, cpu_t* c, bus_t* b, exec_fn execute, u64* out_steps);
 void jit_reset_counters(jit_t* g);
+/* Full TB cache wipe: zero n_blocks, lookup_n, cg.used, counters[], lookup_idx[], lookup_pc[].
+   Called from snap_restore (TT safety) and from compile_block when n_blocks
+   reaches JIT_MAX_BLOCKS (generation reset, see 14-05). */
+void jit_flush(jit_t* g);
 
 #endif

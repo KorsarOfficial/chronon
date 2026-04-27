@@ -102,3 +102,18 @@ void jit_reset_counters(jit_t* g) {
     if (!g) return;
     for (u32 i = 0; i < JIT_MAX_BLOCKS; ++i) g->counters[i] = 0;
 }
+
+void jit_flush(jit_t* g) {
+    if (!g) return;
+    g->n_blocks     = 0u;
+    g->lookup_n     = 0;            /* CRITICAL: without this, install() appends at stale pos and lookup scan misses */
+    g->jit_steps    = 0u;
+    g->native_steps = 0u;
+    g->interp_steps = 0u;
+    g->cg.used      = 0u;
+    for (u32 i = 0; i < JIT_MAX_BLOCKS; ++i) {
+        g->lookup_idx[i] = -1;
+        g->lookup_pc[i]  = 0u;
+        g->counters[i]   = 0u;
+    }
+}

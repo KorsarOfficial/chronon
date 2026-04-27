@@ -132,7 +132,9 @@ bool snap_restore(const snap_blob_t* b, cpu_t* c, bus_t* bus, tt_periph_t* p) {
     *p->uart  = b->uart_state;
     memcpy(sr->buf, b->sram, SRAM_SIZE);
     run_dcache_invalidate();
-    jit_reset_counters(g_jit_for_tt);
+    /* TT safety: after snap_restore, all compiled TBs reference the pre-restore
+       PC layout. Flush full cache; TBs will recompile lazily as PCs heat up. */
+    jit_flush(g_jit_for_tt);
     return true;
 }
 
