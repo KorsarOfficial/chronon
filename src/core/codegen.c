@@ -810,8 +810,24 @@ void codegen_free(codegen_t* cg) {
     cg->buffer = NULL;
 }
 
+/* T32 memory ops (T4 form) carry writeback/index/add fields that emit_load/emit_store
+   does not implement.  Only the simple T3 form (add=1,index=1,writeback=0) is safe
+   to compile natively.  Return false for any insn that needs the interpreter. */
+static bool insn_native_ok(const insn_t* i) {
+    switch (i->op) {
+        case OP_T32_LDR_IMM:  case OP_T32_STR_IMM:
+        case OP_T32_LDRB_IMM: case OP_T32_STRB_IMM:
+        case OP_T32_LDRH_IMM: case OP_T32_STRH_IMM:
+        case OP_T32_LDRD_IMM: case OP_T32_STRD_IMM:
+            return i->add && i->index && !i->writeback;
+        default:
+            return true;
+    }
+}
+
 cg_thunk_t codegen_emit(codegen_t* cg, const insn_t* ins, u8 n) {
     for (u8 k = 0; k < n; ++k) if (!codegen_supports(ins[k].op)) return NULL;
+    for (u8 k = 0; k < n; ++k) if (!insn_native_ok(&ins[k]))     return NULL;
     if (cg->used + (u32)n * 128u + 128u > cg->capacity) return NULL;
     u8* start = cg->buffer + cg->used;
     emit_prologue(cg);

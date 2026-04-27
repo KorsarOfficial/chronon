@@ -89,6 +89,25 @@ completed: 2026-04-27
 - `setc_r10d` uses `setc r10b + movzx r10d, r10b` instead of `xor r10d,r10d + setc r10b`: xor clears CF, making setc capture 0 always. movzx is flag-neutral.
 - T32_BL target = (pc+4+imm)&~1u matching executor.c Thumb LSB stripping.
 
+## Post-Commit Regression Fixes
+
+Three bugs surfaced during firmware regression testing after the initial 14-04 commits. All were fixed in a follow-up commit that brought the firmware suite from 10/14 to 14/14.
+
+**Bug R1 (test10/test13): T32 memory ops with writeback accepted by codegen but emitted wrongly**
+- `codegen_supports` included `OP_T32_LDR_IMM` and variants unconditionally. `emit_load` always emits `base + imm` address but never updates the base register — correct for T3 (no writeback) but wrong for T4 (post-increment writeback). `puts_` in test10_stm32_blink uses `ldrb.w r1,[r0,#1]!` (T4). Before 14-04, this block fell to the interpreter because B_COND wasn't native; after 14-04 it compiled natively with broken writeback, causing an infinite byte loop (r0 never advanced).
+- **Fix:** Added `insn_native_ok()` guard in `codegen_emit`. T32 memory ops are only accepted when `add=true && index=true && !writeback` (T3 simple-offset). All other forms fall to the interpreter.
+- **Files:** `src/core/codegen.c`, `tests/test_jit_ldr_str.c` (t32_ldr_imm test updated to set explicit T3 flags)
+
+**Bug R2 (test7/test9): ISB/DSB decode as conditional branches due to decoder check typo**
+- `decoder.c` checked `w0 == 0xF3AFu` for the hint/barrier group. ARM barrier instructions (ISB/DSB/DMB) use `0xF3BF xxxx` — `0xF3BF`, not `0xF3AF`. These fell through to the B.cond T3 decoder, producing `OP_T32_B_COND` with cond=14 (AL) and a huge immediate offset. At runtime DSB at PC=0xEA2 (inside `vPortEnterCritical` in test7_freertos) jumped to 0xC0D44 — confirmed by debug trace at step 490424→490425.
+- **Fix:** Changed condition to `w0 == 0xF3AFu || w0 == 0xF3BFu`.
+- **Files:** `src/core/decoder.c`, `tests/test_decoder.c` (added t32_isb/dsb/dmb_decodes_as_nop regression tests)
+
+**Bug R3 (all FreeRTOS tests): BASEPRI not checked in interrupt dispatch**
+- `check_irqs` dispatched SysTick/PendSV/NVIC IRQs whenever PRIMASK=0, ignoring BASEPRI. FreeRTOS `vPortEnterCritical` sets BASEPRI=16 to mask kernel-priority interrupts during critical sections. Without this check, SysTick fired mid-critical-section and corrupted FreeRTOS task state.
+- **Fix:** Added `&& c->basepri == 0` to the interrupt dispatch condition in both `run_steps_full_gdb` and `run_steps_full_g`.
+- **Files:** `src/core/run.c`
+
 ## Deviations from Plan
 
 ### Auto-fixed Issues

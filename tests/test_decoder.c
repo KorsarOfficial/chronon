@@ -66,11 +66,52 @@ TEST(nop) {
     ASSERT_EQ_U32(i.op, OP_NOP);
 }
 
+/* Regression: T32 barrier instructions (ISB/DSB/DMB) have w0=0xF3BF.
+   Before the fix they fell through to the B.cond T3 decoder and produced
+   a branch to a garbage address (confirmed crash in test7_freertos at step
+   490424: DSB at PC=0xEA2 decoded as B AL imm=786078 -> target=0xC0D44).
+   After the fix both 0xF3AF (hints) and 0xF3BF (barriers) decode as NOP. */
+TEST(t32_isb_decodes_as_nop) {
+    bus_t b; setup(&b);
+    /* ISB SY: F3BF 8F6F (little-endian halfwords) */
+    u16 words[2] = { 0xF3BFu, 0x8F6Fu };
+    bus_load_blob(&b, 0, (u8*)words, 4);
+    insn_t i;
+    u8 sz = decode(&b, 0, &i);
+    ASSERT_EQ_U32(sz, 4);
+    ASSERT_EQ_U32(i.op, OP_T32_NOP);
+}
+
+TEST(t32_dsb_decodes_as_nop) {
+    bus_t b; setup(&b);
+    /* DSB SY: F3BF 8F4F */
+    u16 words[2] = { 0xF3BFu, 0x8F4Fu };
+    bus_load_blob(&b, 0, (u8*)words, 4);
+    insn_t i;
+    u8 sz = decode(&b, 0, &i);
+    ASSERT_EQ_U32(sz, 4);
+    ASSERT_EQ_U32(i.op, OP_T32_NOP);
+}
+
+TEST(t32_dmb_decodes_as_nop) {
+    bus_t b; setup(&b);
+    /* DMB SY: F3BF 8F5F */
+    u16 words[2] = { 0xF3BFu, 0x8F5Fu };
+    bus_load_blob(&b, 0, (u8*)words, 4);
+    insn_t i;
+    u8 sz = decode(&b, 0, &i);
+    ASSERT_EQ_U32(sz, 4);
+    ASSERT_EQ_U32(i.op, OP_T32_NOP);
+}
+
 int main(void) {
     RUN(mov_imm);
     RUN(add_reg);
     RUN(add_imm3);
     RUN(cmp_imm);
     RUN(nop);
+    RUN(t32_isb_decodes_as_nop);
+    RUN(t32_dsb_decodes_as_nop);
+    RUN(t32_dmb_decodes_as_nop);
     TEST_REPORT();
 }

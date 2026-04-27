@@ -84,7 +84,11 @@ u64 run_steps_full_gdb(cpu_t* c, bus_t* bus, u64 max_steps,
         if (g_dwt_for_run) dwt_tick(g_dwt_for_run);
 
     check_irqs_gdb:
-        if (c->mode == MODE_THREAD && !(c->primask & 1u)) {
+        /* BASEPRI masks interrupts whose priority >= basepri (ARM spec).
+           When basepri != 0 (e.g., FreeRTOS critical section sets it to 16),
+           all kernel-priority interrupts (SysTick/PendSV at priority 255,
+           NVIC IRQs at priority >= basepri) are suppressed. */
+        if (c->mode == MODE_THREAD && !(c->primask & 1u) && c->basepri == 0) {
             if (st && st->irq_pending) {
                 st->irq_pending = false;
                 exc_enter(c, bus, EXC_SYSTICK);
@@ -130,7 +134,7 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
         if (g_dwt_for_run) dwt_tick(g_dwt_for_run);
 
     check_irqs:
-        if (c->mode == MODE_THREAD && !(c->primask & 1u)) {
+        if (c->mode == MODE_THREAD && !(c->primask & 1u) && c->basepri == 0) {
             if (st && st->irq_pending) {
                 st->irq_pending = false;
                 exc_enter(c, bus, EXC_SYSTICK);

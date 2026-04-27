@@ -111,6 +111,7 @@ TEST(t32_ldr_imm) {
     insn_t t32; memset(&t32, 0, sizeof t32);
     t32.op = OP_T32_LDR_IMM; t32.rd = 5u; t32.rn = 2u; t32.imm = 0u;
     t32.pc = 2u; t32.size = 4u;
+    t32.add = true; t32.index = true; t32.writeback = false; /* T3 simple offset */
     cg_thunk_t fn = codegen_emit(&s_jit.cg, &t32, 1u);
     ASSERT_TRUE(fn != NULL);
     ASSERT_TRUE(fn(&g_cpu, &g_bus));

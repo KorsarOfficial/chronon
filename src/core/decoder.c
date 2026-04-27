@@ -403,8 +403,12 @@ static u8 decode_thumb32(u16 w0, u16 w1, addr_t pc, insn_t* out) {
                 out->op  = OP_T32_MSR;
                 return 4;
             }
-            /* Hint / barrier: w0 = 0xF3AF — treat all as NOP. */
-            if (w0 == 0xF3AFu) {
+            /* Hint / barrier: 0xF3AF (NOP/WFE/WFI/SEV/hints) and
+               0xF3BF (ISB/DSB/DMB) — treat all as NOP.
+               Both have the same upper halfword pattern but differ in bits[3:0]
+               of the Rn field; neither has architectural side-effects in this
+               emulator model, so treating them as NOPs is correct. */
+            if (w0 == 0xF3AFu || w0 == 0xF3BFu) {
                 out->op = OP_T32_NOP;
                 return 4;
             }
