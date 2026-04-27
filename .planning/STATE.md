@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 
 ## Current Position
 
-Phase: 13
+Phase: 13 (shipped 2026-04-27, ready for /gsd:plan-phase 14)
 Plan: 06 (complete — TT-02 gap closed)
-Status: ALL 13-01..13-06 complete; TT-01..TT-08 all verified including TT-02 ETH RX; 11/11 tests pass; 14/14 firmware tests pass
-Last activity: 2026-04-26 — p13.06 TT-02 closure; eth_inject_rx + tt_record_eth_rx + side-blob store + EVENT_ETH_RX replay byte-eq
+Status: ALL 13-01..13-06 complete; TT-01..TT-08 all 8/8 verified by gsd-verifier; 11/11 ctest + 14/14 firmware
+Last activity: 2026-04-27 — gsd-verifier passed 8/8; ROADMAP marked Phase 13 shipped
 
 ## Performance Metrics
 

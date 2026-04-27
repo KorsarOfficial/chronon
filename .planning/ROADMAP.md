@@ -7,7 +7,7 @@ Phases 15-17 are the three product faces (web learn / CI / distribution).
 
 ## Phases
 
-- [ ] **Phase 13: Time-Travel Kernel** — determinism + snapshot + replay + rewind
+- [x] **Phase 13: Time-Travel Kernel** — determinism + snapshot + replay + rewind (shipped 2026-04-27, 8/8 TT verified, 11 ctest + 14 fw green)
 - [ ] **Phase 14: JIT Depth** — direct chaining + LDR/STR native + flags via LEA
 - [ ] **Phase 15: WASM + Web IDE** — emscripten port + Monaco editor + lessons
 - [ ] **Phase 16: Python API + CI** — pytest plugin + GitHub Action + Docker
@@ -21,8 +21,8 @@ Phases 15-17 are the three product faces (web learn / CI / distribution).
 This is the unique USP that beats QEMU/Renode.
 
 **Depends on:** v1.0 (existing emulator).
-**Requirements:** TT-01..TT-08
-**Plans:** 5 plans
+**Requirements:** TT-01..TT-08 (8/8 verified 2026-04-27)
+**Plans:** 6 plans (5 initial + 1 gap-closure)
 
 **Success criteria (observable):**
 1. running same firmware twice with same event log produces byte-equal final state
@@ -33,11 +33,12 @@ This is the unique USP that beats QEMU/Renode.
 5. all 14 v1.0 firmware tests still pass
 
 **Plans:**
-- [ ] 13-01-PLAN.md — determinism kernel: ev_t/ev_log_t, jit_t.counters[], bus_find_flat, uart.replay_mode (Wave 1)
-- [ ] 13-02-PLAN.md — snapshot module: snap_blob_t (~263KB) memcpy save/restore + xor32 + file rt (Wave 2)
-- [ ] 13-03-PLAN.md — replay engine: ev_log_seek + tt_inject_event + run_until_cycle + tt_replay (Wave 2)
-- [ ] 13-04-PLAN.md — rewind primitives: tt_t lifecycle + bsearch rewind + step_back + diff <100ms@1M (Wave 3)
-- [ ] 13-05-PLAN.md — time-travel firmware test: fw_tt 50K cycles, 3-run byte-eq REF=rewind=stepback (Wave 4)
+- [x] 13-01-PLAN.md — determinism kernel: ev_t/ev_log_t, jit_t.counters[], bus_find_flat, uart.replay_mode (Wave 1)
+- [x] 13-02-PLAN.md — snapshot module: snap_blob_t (~263KB) memcpy save/restore + xor32 + file rt (Wave 2)
+- [x] 13-03-PLAN.md — replay engine: ev_log_seek + tt_inject_event + run_until_cycle + tt_replay (Wave 2)
+- [x] 13-04-PLAN.md — rewind primitives: tt_t lifecycle + bsearch rewind + step_back + diff 0.3ms@1M (Wave 3)
+- [x] 13-05-PLAN.md — time-travel firmware test: fw_tt 50K cycles, 3-run byte-eq REF=rewind=stepback (Wave 4)
+- [x] 13-06-PLAN.md — TT-02 closure: tt_t.frames[256] side-blob + eth_inject_rx + EVENT_ETH_RX replay byte-eq (Wave 5, gap closure)
 
 ---
 
@@ -138,13 +139,13 @@ This is the meridian-ci product face.
 
 | Phase | Plans | Status |
 |-------|-------|--------|
-| 13. Time-Travel Kernel | 5 | Planned |
+| 13. Time-Travel Kernel | 6 | Shipped 2026-04-27 (8/8 TT, 11 ctest + 14 fw) |
 | 14. JIT Depth          | 5 | Not started |
 | 15. WASM + Web IDE     | 5 | Not started |
 | 16. Python API + CI    | 5 | Not started |
 | 17. Landing & Dist     | 4 | Not started |
 
-**Total:** 24 plans across 5 phases.
+**Total:** 25 plans across 5 phases.
 
 ## Wave Plan: Phase 13
 
@@ -154,3 +155,4 @@ This is the meridian-ci product face.
 | 2    | 13-02, 13-03         | 13-01             | Parallel: snapshot + replay engine (no file overlap)  |
 | 3    | 13-04                | 13-02, 13-03      | tt_t lifecycle + rewind/step_back/diff                |
 | 4    | 13-05                | 13-04             | Integration firmware + 3-run byte-eq                  |
+| 5    | 13-06                | 13-04, 13-05      | Gap closure TT-02: ETH RX side-blob + replay byte-eq  |
