@@ -65,11 +65,22 @@ u64 run_steps_full_gdb(cpu_t* c, bus_t* bus, u64 max_steps,
             gdb->halted_for_gdb = true;
             gdb_serve(gdb, c, bus);
         }
-        /* JIT fast path: try to run a pre-decoded block; falls back to
-           interpreter on miss or first few hits. */
+        /* JIT fast path: chained dispatch across compiled blocks; falls back to
+           interpreter on miss or first few hits. Skip chain when gdb stepping
+           to preserve single-step semantics. */
         if (!gdb) {
             u64 jit_steps = 0;
-            if (jit_run(&g_jit, c, bus, execute, &jit_steps) && jit_steps > 0) {
+            u64 budget = max_steps - i;
+            if (jit_run_chained(&g_jit, c, bus, execute, budget, &jit_steps) && jit_steps > 0) {
+                if (st) systick_tick(st, (u32)jit_steps);
+                if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
+                i += jit_steps - 1;
+                goto check_irqs_gdb;
+            }
+        } else if (gdb && !gdb->stepping) {
+            u64 jit_steps = 0;
+            u64 budget = max_steps - i;
+            if (jit_run_chained(&g_jit, c, bus, execute, budget, &jit_steps) && jit_steps > 0) {
                 if (st) systick_tick(st, (u32)jit_steps);
                 if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
                 i += jit_steps - 1;
@@ -120,7 +131,8 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
     u64 i = 0;
     for (; i < max_steps && !c->halted; ++i) {
         u64 jit_steps = 0;
-        if (g && jit_run(g, c, bus, execute, &jit_steps) && jit_steps > 0) {
+        u64 budget = max_steps - i;
+        if (g && jit_run_chained(g, c, bus, execute, budget, &jit_steps) && jit_steps > 0) {
             if (st) systick_tick(st, (u32)jit_steps);
             if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
             i += jit_steps - 1;
