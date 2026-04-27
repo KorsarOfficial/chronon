@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+  #include <windows.h>
+#endif
 
 #include "core/cpu.h"
 #include "core/bus.h"
@@ -106,10 +109,29 @@ int main(int argc, char** argv) {
         else fprintf(stderr, "[gdb] failed to listen on :%d\n", gdb_port);
     }
 
+#ifdef _WIN32
+    LARGE_INTEGER freq, t0, t1;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+#endif
+
     u64 n = run_steps_full_gdb(&cpu, &bus, max_steps, &systick, &scb, g);
+
+#ifdef _WIN32
+    QueryPerformanceCounter(&t1);
+    double elapsed_s = (double)(t1.QuadPart - t0.QuadPart) / (double)freq.QuadPart;
+    double ips_m = (elapsed_s > 0.0) ? ((double)n / elapsed_s / 1e6) : 0.0;
+#else
+    double elapsed_s = 0.0;
+    double ips_m = 0.0;
+#endif
+
     if (g) gdb_close(g);
 
     fprintf(stderr, "halted after %llu instructions\n", (unsigned long long)n);
+#ifdef _WIN32
+    fprintf(stderr, "IPS: %.2fM  elapsed: %.1fms\n", ips_m, elapsed_s * 1000.0);
+#endif
     fprintf(stderr, "R0=%08x R1=%08x R2=%08x R3=%08x\n",
             cpu.r[0], cpu.r[1], cpu.r[2], cpu.r[3]);
     fprintf(stderr, "PC=%08x SP=%08x APSR=%08x\n",
