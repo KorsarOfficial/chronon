@@ -50,6 +50,31 @@ FORCE_INLINE void cache_decode(bus_t* bus, addr_t pc, insn_t* out) {
     e->valid = true;
 }
 
+/* Cap chain budget so the chain returns before missing a pending exception.
+   Two caps:
+   1. SysTick CVR: chain must yield before the next tick boundary so each
+      reload fires as a separate irq_pending event (not silently coalesced).
+   2. PendSV pending: context switches (FreeRTOS vTaskDelay/portYIELD) must
+      be dispatched promptly; cap to JIT_MAX_BLOCK_LEN so at most one more
+      block runs before the scheduler gets control. Without this cap, the chain
+      could run rvr=159999 more cycles after portYIELD sets pendsv_pending,
+      starving the other task. */
+FORCE_INLINE u64 irq_safe_budget(const systick_t* st, const scb_t* scb, u64 remaining) {
+    u64 cap = remaining;
+    /* PendSV cap: if a context switch is already requested, limit to one block. */
+    if (scb && scb->pendsv_pending) {
+        u64 psv_cap = (u64)JIT_MAX_BLOCK_LEN;
+        if (psv_cap < cap) cap = psv_cap;
+    }
+    if (!st) return cap;
+    if (!(st->csr & 1u)) return cap;   /* SysTick disabled */
+    if (!(st->csr & 2u)) return cap;   /* TICKINT disabled -- no IRQ */
+    u32 cvr = st->cvr ? st->cvr : st->rvr;
+    if (cvr == 0u) return cap;
+    u64 stk_cap = (u64)cvr;
+    return stk_cap < cap ? stk_cap : cap;
+}
+
 /* GDB-aware run (used by main.c and gdb integration). */
 u64 run_steps_full_gdb(cpu_t* c, bus_t* bus, u64 max_steps,
                        systick_t* st, scb_t* scb, gdb_t* gdb) {
@@ -67,11 +92,13 @@ u64 run_steps_full_gdb(cpu_t* c, bus_t* bus, u64 max_steps,
         }
         /* JIT fast path: chained dispatch across compiled blocks; falls back to
            interpreter on miss or first few hits. Skip chain when gdb stepping
-           to preserve single-step semantics. */
+           to preserve single-step semantics. Budget is capped to SysTick CVR so
+           the chain yields before the next tick boundary, preserving IRQ periodicity. */
         if (!gdb) {
             u64 jit_steps = 0;
-            u64 budget = max_steps - i;
-            if (jit_run_chained(&g_jit, c, bus, execute, budget, &jit_steps) && jit_steps > 0) {
+            u64 budget = irq_safe_budget(st, scb, max_steps - i);
+            const bool* stop = scb ? &scb->pendsv_pending : NULL;
+            if (jit_run_chained(&g_jit, c, bus, execute, budget, &jit_steps, stop) && jit_steps > 0) {
                 if (st) systick_tick(st, (u32)jit_steps);
                 if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
                 i += jit_steps - 1;
@@ -79,8 +106,9 @@ u64 run_steps_full_gdb(cpu_t* c, bus_t* bus, u64 max_steps,
             }
         } else if (gdb && !gdb->stepping) {
             u64 jit_steps = 0;
-            u64 budget = max_steps - i;
-            if (jit_run_chained(&g_jit, c, bus, execute, budget, &jit_steps) && jit_steps > 0) {
+            u64 budget = irq_safe_budget(st, scb, max_steps - i);
+            const bool* stop = scb ? &scb->pendsv_pending : NULL;
+            if (jit_run_chained(&g_jit, c, bus, execute, budget, &jit_steps, stop) && jit_steps > 0) {
                 if (st) systick_tick(st, (u32)jit_steps);
                 if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
                 i += jit_steps - 1;
@@ -131,8 +159,9 @@ u64 run_steps_full_g(cpu_t* c, bus_t* bus, u64 max_steps,
     u64 i = 0;
     for (; i < max_steps && !c->halted; ++i) {
         u64 jit_steps = 0;
-        u64 budget = max_steps - i;
-        if (g && jit_run_chained(g, c, bus, execute, budget, &jit_steps) && jit_steps > 0) {
+        u64 budget = irq_safe_budget(st, scb, max_steps - i);
+        const bool* stop = scb ? &scb->pendsv_pending : NULL;
+        if (g && jit_run_chained(g, c, bus, execute, budget, &jit_steps, stop) && jit_steps > 0) {
             if (st) systick_tick(st, (u32)jit_steps);
             if (g_dwt_for_run) for (u64 k = 0; k < jit_steps; ++k) dwt_tick(g_dwt_for_run);
             i += jit_steps - 1;

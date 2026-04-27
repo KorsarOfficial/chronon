@@ -64,7 +64,7 @@ TEST(test_chain) {
     /* Chain call: budget=10000, expect many blocks run. */
     c.r[REG_PC] = 0u; c.r[0] = 0u; c.halted = false;
     u64 steps = 0u;
-    bool ok = jit_run_chained(&s_jit, &c, &bus, execute, 10000ull, &steps);
+    bool ok = jit_run_chained(&s_jit, &c, &bus, execute, 10000ull, &steps, NULL);
 
     ASSERT_TRUE(ok);
     /* Must have run at least 2 full blocks (each block = up to JIT_MAX_BLOCK_LEN insns). */
@@ -97,7 +97,7 @@ TEST(test_budget) {
        (remaining < JIT_MAX_BLOCK_LEN on first iteration). */
     c.r[REG_PC] = 0u; c.r[0] = 0u; c.halted = false;
     u64 small = 0u;
-    (void)jit_run_chained(&s_jit, &c, &bus, execute, (u64)(JIT_MAX_BLOCK_LEN - 1), &small);
+    (void)jit_run_chained(&s_jit, &c, &bus, execute, (u64)(JIT_MAX_BLOCK_LEN - 1), &small, NULL);
     /* overshoot bounded: either 0 (budget cliff hit immediately) or at most JIT_MAX_BLOCK_LEN */
     ASSERT_TRUE(small <= (u64)JIT_MAX_BLOCK_LEN);
 }

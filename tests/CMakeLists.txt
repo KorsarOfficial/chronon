@@ -63,3 +63,7 @@ add_test(NAME jit_branch COMMAND test_jit_branch)
 add_executable(test_jit_chain test_jit_chain.c)
 target_link_libraries(test_jit_chain PRIVATE cortex_m_core)
 add_test(NAME jit_chain COMMAND test_jit_chain)
+
+add_executable(test_jit_systick test_jit_systick.c)
+target_link_libraries(test_jit_systick PRIVATE cortex_m_core)
+add_test(NAME jit_systick COMMAND test_jit_systick)

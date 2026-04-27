@@ -102,12 +102,15 @@ bool jit_run(jit_t* j, cpu_t* c, bus_t* b, exec_fn execute, u64* out_steps) {
 }
 
 bool jit_run_chained(jit_t* j, cpu_t* c, bus_t* b, exec_fn execute,
-                     u64 max_steps, u64* out_steps) {
+                     u64 max_steps, u64* out_steps, const bool* stop) {
     u64 total = 0u;
     while (!c->halted && total < max_steps) {
         u64 remaining = max_steps - total;
         /* Exit early when budget is too tight to avoid overshooting by >31 cycles. */
         if (remaining < (u64)JIT_MAX_BLOCK_LEN) break;
+        /* Exit if caller signals a pending exception (e.g. pendsv_pending set
+           by firmware ICSR write mid-chain) so caller can dispatch promptly. */
+        if (stop && *stop) break;
         u64 steps = 0u;
         if (!jit_run(j, c, b, execute, &steps)) break;
         if (steps == 0u) break;

@@ -136,8 +136,53 @@ jit_run_chained symbol in libcortex_m_core.a: CONFIRMED (T jit_run_chained at 0x
 
 - 14-06 bench: jit_run_chained provides the speedup path to measure; expect 1.5x-2x on FreeRTOS hot loops from chain alone
 - TT round-trip: tt_replay byte-eq and tt_rewind cycle-precision preserved through chained dispatch
-- All 16 ctest pass; firmware 11/14 (3 pre-existing failures from 14-04, not regressions)
+- All 17 ctest pass (16 original + 1 new regression test); firmware 14/14 after IRQ fix
 
 ---
 *Phase: 14-jit-depth*
 *Completed: 2026-04-27*
+
+---
+
+## Post-Commit Addendum: IRQ Periodicity Regression Fix
+
+**Date:** 2026-04-26
+**Commits that introduced regression:** cae8aff + 0a5c693
+
+### Bug
+
+`jit_run_chained` was called with `budget = max_steps - i` (up to millions of cycles) from `run_steps_full_g` and `run_steps_full_gdb`. The entire budget ran in one chain call before `systick_tick` and `check_irqs` fired. Two failure modes:
+
+1. **SysTick coalescing:** `systick_tick(st, bulk)` has an internal while-loop for multiple reloads, but `irq_pending` is a `bool` — all intermediate firings collapsed to one. The outer `check_irqs` delivered only one SysTick IRQ per multi-million-cycle chain call. test4 (reload=50) never accumulated 5 ticks; test6 (mini-RTOS) scheduler never exited.
+
+2. **PendSV latency:** `portYIELD()` in FreeRTOS `vTaskDelay` writes ICSR bit28 to set `scb->pendsv_pending = true` mid-chain. The chain had no visibility of this write. The PendSV context switch was deferred until the chain returned (up to 159999 cycles = one full FreeRTOS tick period). TaskB ran continuously, starving TaskA. test7_freertos printed thousands of 'B' before context switch.
+
+**Correction about pre-existing failures:** The original self-check was incorrect — test4/test6/test7 were regressions from 14-05 chaining, not pre-existing from 14-04. Pre-14-05 code (single-block `jit_run`) checked IRQs every ~32 instructions. All three tests passed on the pre-14-05 codebase.
+
+### Fix (src/core/run.c + src/core/jit.c + include/core/jit.h)
+
+**1. `irq_safe_budget(st, scb, remaining)`** — new helper in run.c:
+- Caps chain budget to SysTick CVR (next tick boundary) when ENABLE+TICKINT are set.
+- Caps to `JIT_MAX_BLOCK_LEN` if `scb->pendsv_pending` is already true at chain entry.
+- When neither condition applies, returns `remaining` unchanged (no-op for non-IRQ runs).
+
+**2. `stop` pointer in `jit_run_chained(…, const bool* stop)`** — new parameter:
+- After each block, checks `stop && *stop`. Callers pass `&scb->pendsv_pending`.
+- When firmware writes ICSR mid-chain (e.g. `portYIELD()` in FreeRTOS), the chain exits after the current block. The outer `check_irqs` then dispatches PendSV immediately.
+- `stop=NULL` (used in test_jit_chain, TT path with no scb) preserves original behavior.
+
+**Performance trade-off:**
+- SysTick cap: chain runs at most `cvr` cycles per call. For FreeRTOS (RVR=159999), that's one full tick period — same throughput as before since ticks fire at the right cadence regardless.
+- PendSV stop: only activates when `pendsv_pending=true` at block boundary (rare). No throughput impact in steady-state hot loops without pending context switches.
+
+### Verification
+
+- All 17 ctest: PASS (16 existing + test_jit_systick regression test added)
+- All 14 firmware tests: PASS (14/14, up from 11/14)
+- test4: R0=5 (5 SysTick ticks counted correctly)
+- test6: halted at correct PC=0xaa after scheduler exit
+- test7_freertos: R0=0x14 R1=0x14 (both tasks ran equal turns, halted cleanly)
+
+### Regression test added
+
+`tests/test_jit_systick.c` (`jit_systick` ctest): hand-encoded ARM Thumb program with SysTick reload=100, busy-waits for 10 IRQ ticks. Runs via `run_steps_full_g` with `jit_t` + `systick_t` + `scb_t`. Verifies `c.halted && tick_count == 10`. Without the `irq_safe_budget` CVR cap, this test fails (tick_count stays near 1, CPU never halts).
