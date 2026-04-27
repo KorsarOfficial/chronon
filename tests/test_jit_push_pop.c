@@ -218,6 +218,128 @@ TEST(t32_stm_ia) {
     ASSERT_EQ_U32(g_cpu.r[0], base + 8u);
 }
 
+/* ---- Slow-path helpers (SRAM at non-standard base -> bus_find_flat returns NULL) ---- */
+
+static bus_t g_bus_slow;
+static cpu_t g_cpu_slow;
+static jit_t s_jit_slow;
+
+static void setup_slow(void) {
+    bus_init(&g_bus_slow);
+    /* Flash at 0 (not writable) and SRAM at 0x20010000 (non-standard, so
+       bus_find_flat(b, 0x20000000) returns NULL -> slow path is forced). */
+    bus_add_flat(&g_bus_slow, "flash", 0x00000000u,  4096u, false);
+    bus_add_flat(&g_bus_slow, "sram",  0x20010000u, 65536u, true);
+    memset(&g_cpu_slow, 0, sizeof g_cpu_slow);
+    cpu_reset(&g_cpu_slow, CORE_M4);
+    memset(&s_jit_slow, 0, sizeof s_jit_slow);
+    jit_init(&s_jit_slow);
+}
+
+static u32 sram_slow_rd(u32 addr) {
+    region_t* sram = bus_find_flat(&g_bus_slow, 0x20010000u);
+    if (!sram || !sram->buf) return 0xDEADDEADu;
+    u32 off = addr - sram->base;
+    return (u32)sram->buf[off]
+         | ((u32)sram->buf[off+1] << 8)
+         | ((u32)sram->buf[off+2] << 16)
+         | ((u32)sram->buf[off+3] << 24);
+}
+
+static void sram_slow_wr(u32 addr, u32 val) {
+    region_t* sram = bus_find_flat(&g_bus_slow, 0x20010000u);
+    if (!sram || !sram->buf) return;
+    u32 off = addr - sram->base;
+    sram->buf[off]   = (u8)val;
+    sram->buf[off+1] = (u8)(val >> 8);
+    sram->buf[off+2] = (u8)(val >> 16);
+    sram->buf[off+3] = (u8)(val >> 24);
+}
+
+/* ---- Test 9: PUSH slow path — SRAM at non-standard base forces bus_write calls ----
+   Regression for: call_rax clobbering rax/eax used as base in next slow-path iteration.
+   Each iteration must reload SP from CPU state before mov_edx_eax. */
+TEST(push_slow_path) {
+    setup_slow();
+    g_cpu_slow.r[0]     = 0x0A0A0A0Au;
+    g_cpu_slow.r[1]     = 0x1B1B1B1Bu;
+    g_cpu_slow.r[2]     = 0x2C2C2C2Cu;
+    g_cpu_slow.r[3]     = 0x3D3D3D3Du;
+    g_cpu_slow.r[REG_SP]= 0x20011000u;
+
+    insn_t push; memset(&push, 0, sizeof push);
+    push.op       = OP_PUSH;
+    push.reg_list = 0x000Fu;  /* {r0-r3} */
+    push.pc       = 0u;
+    push.size     = 2u;
+
+    cg_thunk_t fn = codegen_emit(&s_jit_slow.cg, &g_bus_slow, &push, 1u);
+    ASSERT_TRUE(fn != NULL);
+    ASSERT_TRUE(fn(&g_cpu_slow, &g_bus_slow));
+
+    u32 base = g_cpu_slow.r[REG_SP];
+    ASSERT_EQ_U32(base, 0x20011000u - 16u);
+    ASSERT_EQ_U32(sram_slow_rd(base + 0u),  0x0A0A0A0Au);
+    ASSERT_EQ_U32(sram_slow_rd(base + 4u),  0x1B1B1B1Bu);
+    ASSERT_EQ_U32(sram_slow_rd(base + 8u),  0x2C2C2C2Cu);
+    ASSERT_EQ_U32(sram_slow_rd(base + 12u), 0x3D3D3D3Du);
+}
+
+/* ---- Test 10: POP slow path — same clobber regression ---- */
+TEST(pop_slow_path) {
+    setup_slow();
+    u32 sp0 = 0x20012000u;
+    sram_slow_wr(sp0 + 0u,  0x00112233u);
+    sram_slow_wr(sp0 + 4u,  0x44556677u);
+    sram_slow_wr(sp0 + 8u,  0x8899AABBu);
+    sram_slow_wr(sp0 + 12u, 0xCCDDEEFFu);
+    g_cpu_slow.r[REG_SP] = sp0;
+
+    insn_t pop; memset(&pop, 0, sizeof pop);
+    pop.op       = OP_POP;
+    pop.reg_list = 0x000Fu;  /* {r0-r3} */
+    pop.pc       = 0u;
+    pop.size     = 2u;
+
+    cg_thunk_t fn = codegen_emit(&s_jit_slow.cg, &g_bus_slow, &pop, 1u);
+    ASSERT_TRUE(fn != NULL);
+    ASSERT_TRUE(fn(&g_cpu_slow, &g_bus_slow));
+
+    ASSERT_EQ_U32(g_cpu_slow.r[REG_SP], sp0 + 16u);
+    ASSERT_EQ_U32(g_cpu_slow.r[0], 0x00112233u);
+    ASSERT_EQ_U32(g_cpu_slow.r[1], 0x44556677u);
+    ASSERT_EQ_U32(g_cpu_slow.r[2], 0x8899AABBu);
+    ASSERT_EQ_U32(g_cpu_slow.r[3], 0xCCDDEEFFu);
+}
+
+/* ---- Test 11: STMDB slow path — is_db=true, same clobber regression ---- */
+TEST(stmdb_slow_path) {
+    setup_slow();
+    u32 base = 0x20013010u;  /* SP points past the end; DB decrements first */
+    g_cpu_slow.r[0] = base;
+    g_cpu_slow.r[2] = 0xCAFEBABEu;
+    g_cpu_slow.r[3] = 0xDEADBEEFu;
+
+    insn_t stm; memset(&stm, 0, sizeof stm);
+    stm.op       = OP_T32_STM;
+    stm.rn       = 0u;
+    stm.reg_list = (1u<<2)|(1u<<3);  /* {r2,r3} */
+    stm.add      = false;   /* DB */
+    stm.writeback= true;
+    stm.pc       = 0u;
+    stm.size     = 4u;
+
+    cg_thunk_t fn = codegen_emit(&s_jit_slow.cg, &g_bus_slow, &stm, 1u);
+    ASSERT_TRUE(fn != NULL);
+    ASSERT_TRUE(fn(&g_cpu_slow, &g_bus_slow));
+
+    u32 start = base - 8u;
+    ASSERT_EQ_U32(sram_slow_rd(start + 0u), 0xCAFEBABEu);
+    ASSERT_EQ_U32(sram_slow_rd(start + 4u), 0xDEADBEEFu);
+    /* writeback: r0 = start = base - 8 */
+    ASSERT_EQ_U32(g_cpu_slow.r[0], start);
+}
+
 /* ---- Test 7: POP{r4,pc} with EXC_RETURN on stack — must NOT compile natively ----
    Regression: codegen used to emit or_bl_1 for EXC_RETURN, which caused the epilogue
    to set c->halted=1 and the emulator to halt instead of falling back to interpreter.
@@ -261,5 +383,8 @@ int main(void) {
     RUN(t32_stm_ia);
     RUN(pop_exc_return_no_native);
     RUN(t32_ldm_with_pc_no_native);
+    RUN(push_slow_path);
+    RUN(pop_slow_path);
+    RUN(stmdb_slow_path);
     TEST_REPORT();
 }

@@ -137,3 +137,40 @@ Commits:
 - d91dd1e (Task 5: bench best-of-3 + <50ms gate + ratio diagnostic)
 
 19/19 ctests pass. No regressions. Measured 173M IPS.
+
+---
+
+## Post-Merge Addendum: Slow-Path eax Clobber Fix
+
+Two additional regressions were found in test7_freertos and test9_freertos_ipc that were introduced by this plan's codegen changes.
+
+### Bug A: wrote_pc suppressed trailing st_pc for OP_POP / OP_T32_LDM
+
+**Symptom:** test7 halted at wrong PC (0x8e) after infinite re-execution of a block.
+
+**Root cause:** `codegen_emit` computed `wrote_pc=true` for the last instruction when `last_op == OP_POP || last_op == OP_T32_LDM`, suppressing the trailing `st_pc` epilogue. Since `insn_native_ok` already rejects any POP/LDM with bit15, the thunk never writes CG_PC_OFF. The CPU's PC was never advanced past the block start, causing infinite re-execution.
+
+**Fix:** Removed OP_POP and OP_T32_LDM from the `wrote_pc` condition in `codegen_emit`. The trailing `st_pc` is now always emitted for these block-terminating instructions.
+
+### Bug B: call_rax clobbers eax/rax used as base address in multi-register slow paths
+
+**Symptom:** test9 STMDB {r0-r8,lr} wrote 9 registers to wrong addresses (0x5, 0x8, 0xC, ...) instead of correct SRAM addresses. Native thunk returned false. Emulator halted.
+
+**Root cause:** In `emit_push_v`, `emit_pop`, and `emit_ldm_stm` slow paths, the base address was loaded into eax once before the register loop, then `mov_edx_eax` used it as the address argument for `bus_write`/`bus_read`. After `call_rax`, rax is clobbered with the return value (1=success, 0=failure). The next iteration's `mov_edx_eax` used 1 or 0 as the address — writing to absolute address 0x1+offset, 0x0+offset etc., which either hit flash (not writable → bus fault → thunk returns false) or wrote to wrong SRAM location.
+
+Pattern in bus fault log:
+```
+write addr=0x00000005 (= 1 + 4)   <- eax=1 after first call_rax, +4 offset
+write addr=0x00000008 (= 0 + 8)   <- eax=0 after second call_rax, +8 offset
+```
+
+**Fix:** Moved `ld_eax(cg, REG_SP)` (for push/pop) and `ld_eax(cg, rn)` + optional `sub_imm(cnt*4)` (for ldm/stm with is_db) from before the loop to inside each loop iteration, immediately before `mov_edx_eax`. Updated `slow_body` size computations: each register iteration gains 7B (ld_eax) for push/pop, and 7B + optional 5B (sub_imm) for ldm/stm. Both the inline slow path and the `slow_only_*` fallback path were fixed.
+
+**Files changed:** `src/core/codegen.c`
+
+**Regression tests added:** `tests/test_jit_push_pop.c` — three new slow-path sub-cases:
+- `push_slow_path`: PUSH{r0-r3} with SRAM at non-standard base (forces bus_write calls)
+- `pop_slow_path`: POP{r0-r3} same setup (forces bus_read calls)
+- `stmdb_slow_path`: STMDB{r2,r3} with is_db=true slow path
+
+**Verification:** 14/14 firmware tests pass (including test7_freertos R0=0x14 R1=0x14 and test9_freertos_ipc R0=0x37 R1=0x0a). 19/19 ctests pass. Bench: 137M IPS.
