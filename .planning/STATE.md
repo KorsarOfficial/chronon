@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 14 (in progress)
-Plan: 01 (complete — WIN64 ABI fix, jit_flush, test_jit_abi)
-Status: 14-01 complete; 12/12 ctest + 14/14 firmware; ready for 14-02
-Last activity: 2026-04-27 — 14-01 executed; WIN64 ABI fixed in codegen; jit_flush exported; snap_restore wired
+Plan: 02 (complete — native LDR/STR via WIN64 helper-call; bl-flag fault path; 22 new opcode families; test_jit_ldr_str)
+Status: 14-02 complete; 13/13 ctest + 14/14 firmware; ready for 14-03
+Last activity: 2026-04-27 — 14-02 executed; emit_load/emit_store (bus_read/bus_write WIN64 calls); emit_epilogue_check; ctest 12->13
 
 ## Performance Metrics
 
@@ -24,6 +24,7 @@ p13.04: 2 tasks, 1 file created, 3 modified, 8->9 tests, 35 min.
 p13.05: 2 tasks, 5 files created, 2 modified, 9->10 tests, 45 min.
 p13.06: 2 tasks, 1 file created, 5 modified, 10->11 tests, 25 min.
 p14.01: 3 tasks, 1 file created, 6 modified, 11->12 tests, 35 min.
+p14.02: 2 tasks, 1 file created, 2 modified, 12->13 tests, 45 min.
 
 ## Accumulated Context
 
@@ -47,12 +48,13 @@ p14.01: 3 tasks, 1 file created, 6 modified, 11->12 tests, 35 min.
 - p13.05: phase 13 complete; TT-01..TT-08 all satisfied; 10/10 tests pass; shippable
 - p13.06: TT-02 ETH gap closure; frames[] side-blob in tt_t (NOT snap_blob_t); ev_t.payload reused as u32 frame_id; eth_inject_rx dual-use (record-time + replay-time); EVENT_ETH_RX no longer a no-op; 11/11 tests pass
 - p14.01: WIN64 ABI fix: thunk prologue saves rcx/rdx->r15/r14 (non-volatile); [r15+disp32] REX.B=1 addressing throughout; 4 pushes+sub rsp,32 = 64B stack aligned; jit_flush exported (zeros n_blocks+lookup_n+cg.used+all tables); snap_restore calls jit_flush (TB cache invalidation on rewind); test_jit_abi 15/15 assertions; 12/12 ctest + 14/14 firmware
+- p14.02: native LDR/STR: sub rsp,16 scratch slot per call site; bus_read (rcx=bus,rdx=addr,r8d=sz,r9=&out@[rsp+0]) + bus_write (r9d=val) via mov rax,imm64+call rax; bl failure accumulator (xor ebx,ebx at prologue; or bl,1 on fault; emit_epilogue_check dual-path); 22 new opcode families (LDR/STR/LDRB/STRB/LDRH/STRH imm+reg+SP+LIT T1+T32 + LDRD/STRD); LDRD/STRD uses i->rs for second reg; native coverage 17->39 families; 13/13 ctest + 14/14 firmware
 
 ### Pending Todos
 
 - direct block chaining (jmp rel32 inter-TB)
-- LDR/STR native via helper-call
-- flag-setter ops via LEA tricks
+- flag-setter ops via LEA tricks (14-03)
+- B.cond native (conditional branch in thunk body) (14-04)
 - WASM-compatible socket layer (postMessage)
 
 ### Blockers
@@ -62,5 +64,5 @@ none.
 ## Session Continuity
 
 Last session: 2026-04-27
-Stopped at: Completed 14-01-PLAN.md (WIN64 ABI fix; jit_flush; snap_restore wired)
+Stopped at: Completed 14-02-PLAN.md (native LDR/STR helper-call; bl-flag fault; emit_epilogue_check; 13/13 ctest)
 Resume file: none
