@@ -8,9 +8,7 @@
   #include <sys/mman.h>
 #endif
 
-/* x86 emit. rdi=cpu, [rdi + R_OFF + i*4] = r[i]. */
-#define R_OFF ((int)offsetof(cpu_t, r))
-#define PC_OFF (R_OFF + 15 * 4)
+/* WIN64: rcx=cpu, rdx=bus on entry; non-volatile r15/r14 hold cpu/bus across helper-calls */
 
 static void emit_b(codegen_t* cg, u8 b) {
     if (cg->used < cg->capacity) cg->buffer[cg->used++] = b;
@@ -21,25 +19,26 @@ static void emit_w32(codegen_t* cg, u32 v) {
     emit_b(cg, (u8)(v >> 16)); emit_b(cg, (u8)(v >> 24));
 }
 
-/* mov eax, [rdi + R_OFF + r*4] */
+/* mov eax, [r15 + CG_R_OFF + r*4]  ->  41 8B 87 disp32 */
 static void ld_eax(codegen_t* cg, u8 r) {
-    emit_b(cg, 0x8B); emit_b(cg, 0x87);
-    emit_w32(cg, (u32)(R_OFF + r * 4));
+    emit_b(cg, 0x41); emit_b(cg, 0x8B); emit_b(cg, 0x87);
+    emit_w32(cg, CG_R_OFF + (u32)r * 4u);
 }
-/* mov ecx, [rdi + R_OFF + r*4] */
+/* mov ecx, [r15 + CG_R_OFF + r*4]  ->  41 8B 8F disp32 */
 static void ld_ecx(codegen_t* cg, u8 r) {
-    emit_b(cg, 0x8B); emit_b(cg, 0x8F);
-    emit_w32(cg, (u32)(R_OFF + r * 4));
+    emit_b(cg, 0x41); emit_b(cg, 0x8B); emit_b(cg, 0x8F);
+    emit_w32(cg, CG_R_OFF + (u32)r * 4u);
 }
-/* mov [rdi + R_OFF + r*4], eax */
+/* mov [r15 + CG_R_OFF + r*4], eax  ->  41 89 87 disp32 */
 static void st_eax(codegen_t* cg, u8 r) {
-    emit_b(cg, 0x89); emit_b(cg, 0x87);
-    emit_w32(cg, (u32)(R_OFF + r * 4));
+    emit_b(cg, 0x41); emit_b(cg, 0x89); emit_b(cg, 0x87);
+    emit_w32(cg, CG_R_OFF + (u32)r * 4u);
 }
-/* pc <- imm */
+/* mov dword [r15 + CG_PC_OFF], imm32  ->  41 C7 87 disp32 imm32 */
 static void st_pc(codegen_t* cg, u32 pc) {
-    emit_b(cg, 0xC7); emit_b(cg, 0x87);
-    emit_w32(cg, (u32)PC_OFF); emit_w32(cg, pc);
+    emit_b(cg, 0x41); emit_b(cg, 0xC7); emit_b(cg, 0x87);
+    emit_w32(cg, CG_PC_OFF);
+    emit_w32(cg, pc);
 }
 static void mov_eax_imm(codegen_t* cg, u32 imm) {
     emit_b(cg, 0xB8); emit_w32(cg, imm);
@@ -51,9 +50,28 @@ static void op_or_ec (codegen_t* cg) { emit_b(cg, 0x09); emit_b(cg, 0xC8); }
 static void op_xor_ec(codegen_t* cg) { emit_b(cg, 0x31); emit_b(cg, 0xC8); }
 static void add_imm(codegen_t* cg, u32 v) { emit_b(cg, 0x05); emit_w32(cg, v); }
 static void sub_imm(codegen_t* cg, u32 v) { emit_b(cg, 0x2D); emit_w32(cg, v); }
-static void ret_true(codegen_t* cg) {
-    emit_b(cg, 0xB0); emit_b(cg, 0x01);
-    emit_b(cg, 0xC3);
+
+/* WIN64 thunk prologue: save non-volatile r15/r14/rbx/rsi; shadow space; load cpu/bus.
+   4 pushes (32B) + sub rsp,32 = 64B total; entry rsp is 8 mod 16 (ret addr on stack),
+   after 4 pushes (32B mod 16 = 0) still 8 mod 16, sub 32 (0 mod 16) -> 8 mod 16 restored. */
+static void emit_prologue(codegen_t* cg) {
+    emit_b(cg, 0x41); emit_b(cg, 0x57);             /* push r15 */
+    emit_b(cg, 0x41); emit_b(cg, 0x56);             /* push r14 */
+    emit_b(cg, 0x53);                                /* push rbx */
+    emit_b(cg, 0x56);                                /* push rsi */
+    emit_b(cg, 0x48); emit_b(cg, 0x83); emit_b(cg, 0xEC); emit_b(cg, 0x20);  /* sub rsp,32 */
+    emit_b(cg, 0x49); emit_b(cg, 0x89); emit_b(cg, 0xCF);                    /* mov r15,rcx */
+    emit_b(cg, 0x49); emit_b(cg, 0x89); emit_b(cg, 0xD6);                    /* mov r14,rdx */
+}
+
+static void emit_epilogue_ok(codegen_t* cg) {
+    emit_b(cg, 0x48); emit_b(cg, 0x83); emit_b(cg, 0xC4); emit_b(cg, 0x20);  /* add rsp,32 */
+    emit_b(cg, 0x5E);                                /* pop rsi */
+    emit_b(cg, 0x5B);                                /* pop rbx */
+    emit_b(cg, 0x41); emit_b(cg, 0x5E);             /* pop r14 */
+    emit_b(cg, 0x41); emit_b(cg, 0x5F);             /* pop r15 */
+    emit_b(cg, 0xB0); emit_b(cg, 0x01);             /* mov al, 1 */
+    emit_b(cg, 0xC3);                                /* ret */
 }
 
 /* op -> x86 emit. */
@@ -156,11 +174,12 @@ void codegen_free(codegen_t* cg) {
 
 cg_thunk_t codegen_emit(codegen_t* cg, const insn_t* ins, u8 n) {
     for (u8 k = 0; k < n; ++k) if (!codegen_supports(ins[k].op)) return NULL;
-    if (cg->used + (u32)n * 64 > cg->capacity) return NULL;
+    if (cg->used + (u32)n * 96u + 64u > cg->capacity) return NULL;
     u8* start = cg->buffer + cg->used;
+    emit_prologue(cg);
     for (u8 k = 0; k < n; ++k) emit_op(cg, &ins[k]);
     u32 last = ins[n - 1].pc + ins[n - 1].size;
     st_pc(cg, last);
-    ret_true(cg);
+    emit_epilogue_ok(cg);
     return (cg_thunk_t)start;
 }

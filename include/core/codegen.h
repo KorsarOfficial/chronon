@@ -6,7 +6,15 @@
 #include "core/bus.h"
 #include "core/decoder.h"
 
-/* arm-op[] -> x86-64 thunk. ABI: rdi=cpu, rsi=bus -> bool. */
+/* arm-op[] -> x86-64 thunk.
+   WIN64 entry: rcx=cpu_t*, rdx=bus_t*.
+   Thunk prologue saves both into non-volatile r15/r14 once and uses
+   [r15 + R_OFF + r*4] for register access throughout the block. */
+
+#define CG_R_OFF    ((u32)offsetof(cpu_t, r))         /* r[0]..r[15] base */
+#define CG_PC_OFF   (CG_R_OFF + 15u * 4u)             /* r[15] (PC) */
+#define CG_APSR_OFF ((u32)offsetof(cpu_t, apsr))      /* APSR for flag setters */
+#define CG_HALT_OFF ((u32)offsetof(cpu_t, halted))    /* halted flag (1B) */
 
 #define CG_PAGE_SIZE   (64 * 1024)
 #define CG_TOTAL_PAGES 32
