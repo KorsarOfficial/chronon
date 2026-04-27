@@ -51,3 +51,7 @@ add_test(NAME jit_abi COMMAND test_jit_abi)
 add_executable(test_jit_ldr_str test_jit_ldr_str.c)
 target_link_libraries(test_jit_ldr_str PRIVATE cortex_m_core)
 add_test(NAME jit_ldr_str COMMAND test_jit_ldr_str)
+
+add_executable(test_jit_flags test_jit_flags.c)
+target_link_libraries(test_jit_flags PRIVATE cortex_m_core)
+add_test(NAME jit_flags COMMAND test_jit_flags)
