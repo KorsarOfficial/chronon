@@ -47,6 +47,7 @@ set(CORE_SRC
 )
 
 add_library(cortex_m_core STATIC ${CORE_SRC})
+set_property(TARGET cortex_m_core PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 if(NOT LECERF_BUILD_PYTHON)
     add_executable(cortex-m tools/main.c)

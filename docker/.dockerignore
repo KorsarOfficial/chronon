@@ -1,0 +1,57 @@
+# Version control
+.git
+.gitmodules
+
+# Planning / IDE
+.planning
+.idea
+.vscode
+*.code-workspace
+
+# Build artifacts (host)
+build
+build2
+build_ninja
+build_*/
+cmake-build-*
+CMakeFiles
+CMakeCache.txt
+compile_commands.json
+*.o
+*.obj
+codegen.o
+nvic.o
+compile.log
+tmp
+tmp_build
+
+# Firmware binaries
+*.bin
+*.elf
+*.axf
+*.hex
+*.map
+firmware/*/build.log
+firmware/*/main.o
+firmware/*/startup.o
+
+# Python build artifacts
+python/build
+python/dist
+python/*.egg-info
+python/lecerf/liblecerf.*
+python/.pytest_cache
+python/.eggs
+
+# Python bytecode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Test cache
+.pytest_cache
+.mypy_cache
+
+# Docker context should not include Windows DLL
+*.dll

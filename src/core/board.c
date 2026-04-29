@@ -39,10 +39,15 @@ board_t* board_create(const char* name) {
 
     b->prof = prof;
 
-    /* Heap-alloc JIT (~2 MB) */
+    /* Heap-alloc JIT (~2 MB). Skipped on non-Windows for now: the JIT codegen
+       is locked to WIN64 ABI; on Linux/macOS the interpreter handles everything. */
+#if defined(_WIN32) && !defined(LECERF_NO_JIT)
     b->jit = (jit_t*)calloc(1u, sizeof(jit_t));
     if (!b->jit) { free(b); return NULL; }
     jit_init(b->jit);
+#else
+    b->jit = NULL;
+#endif
 
     /* UART capture buffer (64 KB) */
     b->uart_buf_cap = 65536u;
@@ -81,8 +86,7 @@ board_t* board_create(const char* name) {
 
 void board_destroy(board_t* b) {
     if (!b) return;
-    jit_flush(b->jit);
-    free(b->jit);
+    if (b->jit) { jit_flush(b->jit); free(b->jit); }
     free(b->uart_buf);
     if (b->tt) tt_destroy(b->tt);
     /* Free flat bus buffers (calloc'd by bus_add_flat) */
