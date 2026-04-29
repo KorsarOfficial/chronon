@@ -1,0 +1,38 @@
+name: 'LECERF Firmware Test Runner'
+description: 'Run firmware tests in the LECERF Cortex-M emulator inside a Docker container.'
+author: 'KorsarOfficial'
+
+branding:
+  icon: 'cpu'
+  color: 'blue'
+
+inputs:
+  board:
+    description: 'Board profile (stm32f103, stm32f407, generic-m4)'
+    required: false
+    default: 'generic-m4'
+  firmware-dir:
+    description: 'Path to directory containing firmware .bin files (mounted into the container at /fw)'
+    required: true
+  tests-dir:
+    description: 'Path to directory containing pytest test_*.py files (mounted into the container at /tests)'
+    required: true
+  timeout-ms:
+    description: 'Per-test instruction budget'
+    required: false
+    default: '5000'
+
+outputs:
+  junit-xml:
+    description: 'Path to JUnit XML report inside the container'
+    value: '/tmp/junit.xml'
+
+runs:
+  using: 'docker'
+  image: 'docker://ghcr.io/korsarofficial/lecerf:latest'
+  args:
+    - ${{ inputs.firmware-dir }}
+    - ${{ inputs.tests-dir }}
+  env:
+    LECERF_BOARD: ${{ inputs.board }}
+    LECERF_TIMEOUT_MS: ${{ inputs.timeout-ms }}
