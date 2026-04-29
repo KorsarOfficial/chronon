@@ -2,8 +2,9 @@
 
 import os
 
-# Firmware root: two levels up from tests/ -> python/ -> repo root -> firmware/
-FIRMWARE_DIR = os.path.normpath(
+# Firmware root: env override (set by docker runner) wins; else two levels up
+# from tests/ -> python/ -> repo root -> firmware/
+FIRMWARE_DIR = os.environ.get("LECERF_FW_DIR") or os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "firmware")
 )
 
