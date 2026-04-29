@@ -43,7 +43,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install lecerf (editable, no recompile)
-        run: pip install -e python/
+        run: pip install -e python/ pytest
 
       # Smoke import — proves ctypes loads MinGW DLL into MSVC CPython
       - name: Import smoke
