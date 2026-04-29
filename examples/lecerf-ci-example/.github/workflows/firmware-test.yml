@@ -1,0 +1,32 @@
+name: firmware-tests
+
+# Runs the LECERF firmware test suite on every push and pull request.
+# Cold path on a stock ubuntu-latest runner: ~17 seconds end-to-end
+#   (Docker image pull ~15 s + container start ~1 s + pytest 3 tests ~1 s).
+# The image is pulled from ghcr.io/korsarofficial/lecerf:latest.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: lecerf 3-firmware suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pre-release: this sample lives inside the cortex-m-emu monorepo, so we
+      # reference the action via the relative path inside the same repo.
+      # After tagging KorsarOfficial/lecerf v1, switch to:
+      #   uses: KorsarOfficial/lecerf@v1
+      - name: Run LECERF firmware tests
+        uses: KorsarOfficial/cortex-m-emu/.github/actions/lecerf-runner@main
+        with:
+          board: generic-m4
+          firmware-dir: ./firmware
+          tests-dir: ./tests
+          timeout-ms: '5000'
