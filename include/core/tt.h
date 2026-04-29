@@ -95,10 +95,26 @@ void tt_record_uart_rx(u64 cycle, u8 byte);
    Returns frame_id on success, UINT32_MAX on capacity exhaustion. */
 u32 tt_record_eth_rx(u64 cycle, const u8* frame, u32 len);
 
+/* Context-threaded record variants: read tt and replay from ctx.
+   No-op when ctx->tt is NULL or ctx->replay is true. */
+struct run_ctx_s;
+void tt_record_irq_ctx    (struct run_ctx_s* ctx, u64 cyc, u8 irq);
+void tt_record_uart_rx_ctx(struct run_ctx_s* ctx, u64 cyc, u8 byte);
+void tt_record_eth_rx_ctx (struct run_ctx_s* ctx, u64 cyc, const u8* pkt, u16 len);
+
+/* Count events in a tt_t's event log. */
+static inline u32 tt_ev_log_count(const tt_t* tt) { return tt ? tt->log.n : 0u; }
+
 /* Module-global tt pointer used by uart/nvic without threading tt through every call.
-   NULL = no recording. Set by tt_create in 13-04. */
+   NULL = no recording. Set by tt_create in 13-04.
+   Prefer run_ctx_t.tt and run_ctx_t.replay for new code. */
+#if defined(__GNUC__) || defined(__clang__)
+extern tt_t* g_tt         __attribute__((deprecated("use run_ctx_t.tt")));
+extern bool  g_replay_mode __attribute__((deprecated("use run_ctx_t.replay")));
+#else
 extern tt_t* g_tt;
-extern bool  g_replay_mode; /* true during tt_replay; suppresses side effects */
+extern bool  g_replay_mode;
+#endif
 
 /* ---- TT core lifecycle (13-04) ---- */
 
@@ -155,8 +171,13 @@ bool snap_load_from_file(snap_blob_t* blob, const char* path);
 /* Internal helper exposed for tests. */
 u32  snap_xor32(const u8* data, u32 n);
 
-/* Set by tt_create in 13-04; NULL until then. snap_restore flushes via jit_reset_counters. */
+/* Set by tt_create in 13-04; NULL until then. snap_restore flushes via jit_reset_counters.
+   Prefer passing jit_t* explicitly. */
+#if defined(__GNUC__) || defined(__clang__)
+extern jit_t* g_jit_for_tt __attribute__((deprecated("use run_ctx_t.jit")));
+#else
 extern jit_t* g_jit_for_tt;
+#endif
 
 /* ---- Replay engine (13-03) ---- */
 

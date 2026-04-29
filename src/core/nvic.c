@@ -1,4 +1,5 @@
 #include "core/nvic.h"
+#include "core/run.h"
 #include "core/tt.h"
 
 /* === NVIC peripheral MMIO (ARM ARM B3.4) === */
@@ -26,10 +27,19 @@ void nvic_set_pending(nvic_t* n, u32 irq) {
     if (irq < NVIC_IRQ_LINES) n->pending[irq >> 5] |= (1u << (irq & 31));
 }
 
+/* Legacy: reads g_tt / g_replay_mode globals. */
 void nvic_set_pending_ext(nvic_t* n, u32 irq, u64 cycle) {
-    if (g_tt && !g_replay_mode) tt_record_irq(cycle, (u8)irq);
+    if (g_tt && !g_replay_mode) tt_record_irq(cycle, (u8)irq); /* legacy fallback */
     nvic_set_pending(n, irq);
 }
+
+/* Context-threaded: reads tt and replay from ctx. */
+void nvic_set_pending_ctx(nvic_t* n, u32 irq, u64 cycle, run_ctx_t* ctx) {
+    if (ctx && ctx->tt && !ctx->replay)
+        tt_record_irq_ctx(ctx, cycle, (u8)irq);
+    nvic_set_pending(n, irq);
+}
+
 void nvic_clear_pending(nvic_t* n, u32 irq) {
     if (irq < NVIC_IRQ_LINES) n->pending[irq >> 5] &= ~(1u << (irq & 31));
 }
@@ -57,6 +67,27 @@ int nvic_attach(struct bus_s* b, nvic_t* n) {
     for (u32 i = 0; i < 8; ++i) { n->enable[i] = n->pending[i] = n->active[i] = 0; }
     for (u32 i = 0; i < NVIC_IRQ_LINES; ++i) n->prio[i] = 0;
     return bus_add_mmio(b, "nvic", NVIC_BASE, NVIC_SIZE, n, nvic_read, nvic_write);
+}
+
+void raise_fault(cpu_t* c, bus_t* b, u8 fault, u32 fault_addr, u32 status_bit) {
+    /* Map fault → CFSR field. CFSR layout (ARM ARM B3.2.15):
+       bits[7:0] MMFSR, bits[15:8] BFSR, bits[31:16] UFSR */
+    if (fault == EXC_MEM_FAULT) {
+        c->cfsr |= status_bit & 0xFFu;
+        if (status_bit & 0x80) c->mmfar = fault_addr;
+    } else if (fault == EXC_BUS_FAULT) {
+        c->cfsr |= (status_bit & 0xFFu) << 8;
+        if (status_bit & 0x80) c->bfar = fault_addr;
+    } else if (fault == EXC_USAGE_FAULT) {
+        c->cfsr |= (status_bit & 0xFFFFu) << 16;
+    }
+    /* Escalate to HardFault if we're already in a handler. */
+    u8 target = fault;
+    if (c->mode == MODE_HANDLER) {
+        c->hfsr |= (1u << 30);  /* FORCED */
+        target = EXC_HARD_FAULT;
+    }
+    exc_enter(c, b, target);
 }
 
 /* Cortex-M exception entry / exit with MSP/PSP selection.
@@ -107,39 +138,15 @@ bool exc_enter(cpu_t* c, bus_t* b, u8 exc) {
     return true;
 }
 
-extern nvic_t* g_nvic_for_run;
-
-/* Raise a configurable fault. Sets fault status bits, then escalates to
-   HardFault if we are already in handler mode (no nesting in our model). */
-void raise_fault(cpu_t* c, bus_t* b, u8 fault, u32 fault_addr, u32 status_bit) {
-    /* Map fault → CFSR field. CFSR layout (ARM ARM B3.2.15):
-       bits[7:0] MMFSR, bits[15:8] BFSR, bits[31:16] UFSR */
-    if (fault == EXC_MEM_FAULT) {
-        c->cfsr |= status_bit & 0xFFu;
-        if (status_bit & 0x80) c->mmfar = fault_addr;
-    } else if (fault == EXC_BUS_FAULT) {
-        c->cfsr |= (status_bit & 0xFFu) << 8;
-        if (status_bit & 0x80) c->bfar = fault_addr;
-    } else if (fault == EXC_USAGE_FAULT) {
-        c->cfsr |= (status_bit & 0xFFFFu) << 16;
-    }
-    /* Escalate to HardFault if we're already in a handler. */
-    u8 target = fault;
-    if (c->mode == MODE_HANDLER) {
-        c->hfsr |= (1u << 30);  /* FORCED */
-        target = EXC_HARD_FAULT;
-    }
-    exc_enter(c, b, target);
-}
-
-bool exc_return(cpu_t* c, bus_t* b, u32 exc_return) {
+/* Legacy exc_return: reads g_nvic_for_run global. */
+bool exc_return(cpu_t* c, bus_t* b, u32 exc_return_val) {
     /* Clear active bit for the IRQ we are returning from. */
     if (g_nvic_for_run && c->ipsr >= EXC_IRQ0 && c->ipsr < EXC_IRQ0 + NVIC_IRQ_LINES) {
         nvic_clear_active(g_nvic_for_run, c->ipsr - EXC_IRQ0);
     }
     /* Select where to pop from. */
-    bool to_psp = (exc_return & 0xFu) == 0xDu;
-    bool to_handler = (exc_return & 0xFu) == 0x1u;
+    bool to_psp     = (exc_return_val & 0xFu) == 0xDu;
+    bool to_handler = (exc_return_val & 0xFu) == 0x1u;
 
     addr_t sp = to_psp ? c->psp : c->msp;
 
@@ -160,16 +167,64 @@ bool exc_return(cpu_t* c, bus_t* b, u32 exc_return) {
     c->apsr = xpsr & 0xF8000000u;
     c->ipsr = xpsr & 0x1FFu;
 
-    if (to_psp)        c->psp = sp + 32;
+    if (to_psp)         c->psp = sp + 32;
     else if (to_handler) c->msp = sp + 32;
-    else               c->msp = sp + 32;
+    else                c->msp = sp + 32;
 
     if (to_handler) {
         c->mode = MODE_HANDLER;
         c->r[REG_SP] = c->msp;
     } else {
         c->mode = MODE_THREAD;
-        /* Update CONTROL.SPSEL based on where we returned. */
+        if (to_psp) {
+            c->control |= 2u;
+            c->r[REG_SP] = c->psp;
+        } else {
+            c->control &= ~2u;
+            c->r[REG_SP] = c->msp;
+        }
+    }
+    c->itstate = 0;
+    return true;
+}
+
+/* Context-threaded exc_return: reads nvic from ctx. */
+bool exc_return_ctx(cpu_t* c, bus_t* b, u32 exc_return_val, run_ctx_t* ctx) {
+    nvic_t* nvic = ctx ? ctx->nvic : g_nvic_for_run; /* legacy fallback */
+    if (nvic && c->ipsr >= EXC_IRQ0 && c->ipsr < EXC_IRQ0 + NVIC_IRQ_LINES) {
+        nvic_clear_active(nvic, c->ipsr - EXC_IRQ0);
+    }
+    bool to_psp     = (exc_return_val & 0xFu) == 0xDu;
+    bool to_handler = (exc_return_val & 0xFu) == 0x1u;
+
+    addr_t sp = to_psp ? c->psp : c->msp;
+
+    u32 r0, r1, r2, r3, r12, lr, pc, xpsr;
+    if (!bus_read(b, sp + 0x00, 4, &r0))  return false;
+    if (!bus_read(b, sp + 0x04, 4, &r1))  return false;
+    if (!bus_read(b, sp + 0x08, 4, &r2))  return false;
+    if (!bus_read(b, sp + 0x0C, 4, &r3))  return false;
+    if (!bus_read(b, sp + 0x10, 4, &r12)) return false;
+    if (!bus_read(b, sp + 0x14, 4, &lr))  return false;
+    if (!bus_read(b, sp + 0x18, 4, &pc))  return false;
+    if (!bus_read(b, sp + 0x1C, 4, &xpsr))return false;
+    c->r[REG_R0] = r0;  c->r[REG_R1] = r1;
+    c->r[REG_R2] = r2;  c->r[REG_R3] = r3;
+    c->r[REG_R12] = r12;
+    c->r[REG_LR] = lr;
+    c->r[REG_PC] = pc & ~1u;
+    c->apsr = xpsr & 0xF8000000u;
+    c->ipsr = xpsr & 0x1FFu;
+
+    if (to_psp)         c->psp = sp + 32;
+    else if (to_handler) c->msp = sp + 32;
+    else                c->msp = sp + 32;
+
+    if (to_handler) {
+        c->mode = MODE_HANDLER;
+        c->r[REG_SP] = c->msp;
+    } else {
+        c->mode = MODE_THREAD;
         if (to_psp) {
             c->control |= 2u;
             c->r[REG_SP] = c->psp;

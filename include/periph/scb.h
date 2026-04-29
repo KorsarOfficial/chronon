@@ -28,4 +28,12 @@ typedef struct scb_s {
 
 int scb_attach(bus_t* b, scb_t* s);
 
+/* Legacy global: set by tools/main.c; prefer scb_t.ctx for new code. */
+struct cpu_s;
+#if defined(__GNUC__) || defined(__clang__)
+extern struct cpu_s* g_cpu_for_scb __attribute__((deprecated("use scb_t.ctx")));
+#else
+extern struct cpu_s* g_cpu_for_scb;
+#endif
+
 #endif

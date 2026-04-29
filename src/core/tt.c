@@ -58,6 +58,31 @@ void tt_record_uart_rx(u64 cycle, u8 byte) {
     if (g_tt && !g_replay_mode) ev_log_append(&g_tt->log, cycle, EVENT_UART_RX, (u32)byte);
 }
 
+/* Context-threaded record variants: no g_* reads. */
+#include "core/run.h"
+
+void tt_record_irq_ctx(run_ctx_t* ctx, u64 cyc, u8 irq) {
+    if (ctx && ctx->tt && !ctx->replay)
+        ev_log_append(&ctx->tt->log, cyc, EVENT_IRQ_INJECT, (u32)irq);
+}
+
+void tt_record_uart_rx_ctx(run_ctx_t* ctx, u64 cyc, u8 byte) {
+    if (ctx && ctx->tt && !ctx->replay)
+        ev_log_append(&ctx->tt->log, cyc, EVENT_UART_RX, (u32)byte);
+}
+
+void tt_record_eth_rx_ctx(run_ctx_t* ctx, u64 cyc, const u8* pkt, u16 len) {
+    if (!ctx || !ctx->tt || ctx->replay || !pkt || !len) return;
+    tt_t* tt = ctx->tt;
+    if (tt->n_frames >= TT_ETH_MAX) return;
+    u32 cap = len < TT_ETH_MTU ? (u32)len : TT_ETH_MTU;
+    u32 id  = tt->n_frames++;
+    eth_frame_t* f = &tt->frames[id];
+    f->len = cap;
+    memcpy(f->buf, pkt, cap);
+    if (!ev_log_append(&tt->log, cyc, EVENT_ETH_RX, id)) tt->n_frames--;
+}
+
 u32 tt_record_eth_rx(u64 cyc, const u8* fr, u32 ln) {
     if (!g_tt || g_replay_mode || !fr || !ln) return 0xFFFFFFFFu;
     if (g_tt->n_frames >= TT_ETH_MAX) return 0xFFFFFFFFu;

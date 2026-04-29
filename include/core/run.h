@@ -42,6 +42,17 @@ u64 run_steps_st    (cpu_t* c, bus_t* bus, u64 max_steps, systick_t* st);
 u64 run_steps       (cpu_t* c, bus_t* bus, u64 max_steps);
 void run_dcache_invalidate(void);
 
+/* Legacy process-globals: prefer run_ctx_t fields for new code. */
+struct dwt_s;
+struct nvic_s;
+#if defined(__GNUC__) || defined(__clang__)
+extern struct dwt_s*  g_dwt_for_run  __attribute__((deprecated("use run_ctx_t.dwt")));
+extern struct nvic_s* g_nvic_for_run __attribute__((deprecated("use run_ctx_t.nvic")));
+#else
+extern struct dwt_s*  g_dwt_for_run;
+extern struct nvic_s* g_nvic_for_run;
+#endif
+
 /* Forward decls for replay engine types (full defs in core/tt.h). */
 struct ev_s;
 struct tt_periph_s;

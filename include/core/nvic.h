@@ -37,11 +37,16 @@ typedef struct nvic_s {
     u8  prio[NVIC_IRQ_LINES];
 } nvic_t;
 
+/* Forward declaration of run_ctx_t (full def in core/run.h). */
+struct run_ctx_s;
+
 struct bus_s;
 int  nvic_attach(struct bus_s* b, nvic_t* n);
 void nvic_set_pending    (nvic_t* n, u32 irq);
-/* External injection path: logs EVENT_IRQ_INJECT when g_tt is set. */
+/* External injection path: logs EVENT_IRQ_INJECT when g_tt is set (legacy). */
 void nvic_set_pending_ext(nvic_t* n, u32 irq, u64 cycle);
+/* Context-threaded variant: reads tt and replay from ctx instead of g_tt/g_replay_mode. */
+void nvic_set_pending_ctx(nvic_t* n, u32 irq, u64 cycle, struct run_ctx_s* ctx);
 int  nvic_pick(const nvic_t* n);   /* returns lowest-numbered pending+enabled IRQ, -1 */
 void nvic_clear_pending(nvic_t* n, u32 irq);
 void nvic_set_active(nvic_t* n, u32 irq);
@@ -64,5 +69,7 @@ bool exc_enter(cpu_t* c, bus_t* b, u8 exc);
 void raise_fault(cpu_t* c, bus_t* b, u8 fault, u32 fault_addr, u32 status_bit);
 /* EXC_RETURN value execution: restore context, pop stack, return to thread. */
 bool exc_return(cpu_t* c, bus_t* b, u32 exc_return);
+/* Context-threaded exc_return: reads nvic from ctx instead of g_nvic_for_run. */
+bool exc_return_ctx(cpu_t* c, bus_t* b, u32 exc_return_val, struct run_ctx_s* ctx);
 
 #endif
