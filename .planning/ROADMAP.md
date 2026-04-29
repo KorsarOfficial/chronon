@@ -10,7 +10,7 @@ Phases 15-17 are the three product faces (web learn / CI / distribution).
 - [x] **Phase 13: Time-Travel Kernel** — determinism + snapshot + replay + rewind (shipped 2026-04-27, 8/8 TT verified, 11 ctest + 14 fw green)
 - [x] **Phase 14: JIT Depth** — direct chaining + LDR/STR native + flags via LEA (shipped 2026-04-27, 6/6 JIT verified, 19 ctest + 14 fw green, 5M insns in 38-46ms = 100M+ IPS)
 - [ ] **Phase 15: WASM + Web IDE** — emscripten port + Monaco editor + lessons
-- [ ] **Phase 16: Python API + CI** — pytest plugin + GitHub Action + Docker
+- [x] **Phase 16: Python API + CI** — pytest plugin + GitHub Action + Docker (shipped 2026-04-29, 5/5 plans, 20.06 MB image, 15/15 pytest 1.87s in container, CI-01..CI-06 all met)
 - [ ] **Phase 17: Landing & Distribution** — lecerf.dev + release pipeline
 
 ## Phase Details
@@ -115,11 +115,11 @@ performance budget the &lt;30s CI gate relies on).
 5. GitHub Action sample repo passes a 3-test suite under 30s
 
 **Plans:**
-- [ ] 16-01-PLAN.md — board_t opaque struct + lecerf.h ABI + globals refactor (Wave 1)
-- [ ] 16-02-PLAN.md — Python ctypes wrapper via scikit-build-core + Board/RunResult/Cpu/Uart/Gpio + 6 smoke tests (Wave 2)
-- [ ] 16-03-PLAN.md — pytest plugin via pytest11 entry point + 3 example tests covering GPIO/UART/registers (Wave 3)
-- [ ] 16-04-PLAN.md — two-stage alpine Dockerfile + .dockerignore + runner.py + 50MB size gate (Wave 4)
-- [ ] 16-05-PLAN.md — GitHub Action manifest + release workflow + lecerf-ci-example sample repo (Wave 5)
+- [x] 16-01-PLAN.md — board_t opaque struct + lecerf.h ABI + globals refactor (Wave 1)
+- [x] 16-02-PLAN.md — Python ctypes wrapper via setuptools + Board/RunResult/Cpu/Uart/Gpio + 6 smoke tests (Wave 2)
+- [x] 16-03-PLAN.md — pytest plugin via pytest11 entry point + 3 example tests covering GPIO/UART/registers (Wave 3)
+- [x] 16-04-PLAN.md — two-stage alpine Dockerfile + .dockerignore + runner.py + 50MB size gate (Wave 4) — 20.06 MB
+- [x] 16-05-PLAN.md — GitHub Action manifest + release workflow + lecerf-ci-example sample repo (Wave 5)
 
 ---
 
@@ -149,7 +149,7 @@ performance budget the &lt;30s CI gate relies on).
 | 13. Time-Travel Kernel | 6 | Shipped 2026-04-27 (8/8 TT, 11 ctest + 14 fw) |
 | 14. JIT Depth          | 7 | Shipped 2026-04-27 (6/6 JIT, 19 ctest + 14 fw; 5M insns 38-46ms = 100M+ IPS; gap closure 14-07) |
 | 15. WASM + Web IDE     | 5 | Not started |
-| 16. Python API + CI    | 5 | Planned 2026-04-28 (5 plans / 5 waves) |
+| 16. Python API + CI    | 5 | Shipped 2026-04-29 (5/5 plans, 20.06 MB image, 15/15 pytest, CI-01..CI-06 met) |
 | 17. Landing & Dist     | 4 | Not started |
 
 **Total:** 27 plans across 5 phases.

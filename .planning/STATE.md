@@ -9,10 +9,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 
 ## Current Position
 
-Phase: 16 (in progress)
-Plan: 03 (complete — pytest11 plugin; board/board_all fixtures; 15/15 pytest; 0.72s suite)
-Status: Phase 16 in progress; 20/20 ctest; 14/14 firmware; liblecerf.dll + Python wrapper + pytest plugin
-Last activity: 2026-04-29 — 16-03 executed; pytest11 entry point; board fixture; 3 example test files; 15 total pytest passing
+Phase: 16 (SHIPPED 2026-04-29)
+Plan: 05 (complete — GitHub Action manifest + release.yml + lecerf-ci-example sample repo + phase close-out)
+Status: Phase 16 complete (5/5 plans, CI-01..CI-06 met). 20/20 ctest; 14/14 firmware; 15/15 pytest 1.87s in 20.06 MB container; sample repo 3/3 pytest 0.37s
+Last activity: 2026-04-29 — 16-05 executed; action.yml + release.yml + examples/lecerf-ci-example/ shipped; ROADMAP + PHASE-SUMMARY written
+Next phase: Phase 17 (release pipeline + lecerf.dev landing) recommended; alternative Phase 15 (WASM + Web IDE)
 
 ## Performance Metrics
 
@@ -32,6 +33,9 @@ p14.06: 3 tasks, 2 files created, 3 modified, 17->18 tests, 90 min.
 p14.07: 5 tasks, 1 file created, 9 modified, 18->19 tests, 120 min.
 p16.01: 4 tasks, 3 files created, 2 modified, 19->20 tests, 35 min.
 p16.02: 3 tasks, 10 files created, 2 modified, 20->26 tests (6 pytest added), 8 min.
+p16.03: 2 tasks, 5 files created, 2 modified, 26->35 tests (9 pytest added; 15/15 0.72s), 25 min.
+p16.04: 4 tasks, 4 files created (Dockerfile, .dockerignore, runner.py, test_docker.sh), 3 modified, 20.06 MB image, 5/5 docker gates, 60 min.
+p16.05: 2 tasks, 12 files created (action.yml, release.yml, sample repo, PHASE-SUMMARY, 16-05 SUMMARY), 2 modified (ROADMAP, STATE), 38 tests cumulative (20 ctest + 14 fw + 15 python sample tests overlap), 35 min.
 
 ## Accumulated Context
 
@@ -64,6 +68,9 @@ p16.02: 3 tasks, 10 files created, 2 modified, 20->26 tests (6 pytest added), 8 
 - p16.01: liblecerf SHARED (OUTPUT_NAME=liblecerf PREFIX="" → liblecerf.dll); tools/main.c rewritten onto board_create/flash/run/destroy; --gdb= path kept via direct board struct access; lecerf-smoke two-board isolation demo; test_lecerf_api 5 smoke tests (null-board, create+run, cpu-isolation, uart-drain, tt-isolation); FIRMWARE_DIR=../../firmware for ctest CWD=build/tests/; 20/20 ctest; 14/14 firmware
 - p16.02: scikit-build-core rejected (MSVC cl.exe can't compile __builtin_ctz); setuptools + pre-built MinGW DLL in package_data; ctypes uses lecerf_board_* prefix (not lecerf_* from plan sketch); Board/RunResult snapshot all regs at run() time (17 ctypes calls amortized); CI uses msys2 MinGW build → MSVC Python 3.12 ctypes smoke; 6/6 pytest 0.27s; 20/20 ctest unaffected
 - p16.03: pytest11 entry point in pyproject.toml; pytest_plugin.py with board(function-scope,--lecerf-board) + board_all(parametrized stm32f103/stm32f407/generic-m4); test_blink (3), test_uart (1), test_registers (5 parametrized); 15/15 pytest 0.72s; --lecerf-board=stm32f407 override verified
+- p16.04: two-stage Alpine Dockerfile; cortex_m_core POSITION_INDEPENDENT_CODE=ON to link static lib into liblecerf.so; b->jit=NULL on !_WIN32 (interpreter path on Linux/musl since JIT codegen is WIN64-ABI-locked); LECERF_FW_DIR env var in conftest.py for docker mount override; final image 20.06 MB; 15/15 pytest in 1.87s
+- p16.05: Docker container Action chosen over JS Action for reproducibility; ghcr.io owner lowercased at publish time (Docker spec mandates); sample repo in-tree for now (split post-v1); sample workflow references KorsarOfficial/cortex-m-emu/.github/actions/lecerf-runner@main relative path; release.yml: 3 jobs (build-wheel-linux + build-and-push-docker + release); softprops/action-gh-release@v2; sample 3/3 pytest 0.37s local
+- Phase 16 SHIPPED 2026-04-29: 5/5 plans, CI-01..CI-06 all met; +2535/-203 LOC; 20.06 MB image; ~17 s end-to-end CI projection (under 30 s gate)
 
 ### Pending Todos
 
@@ -77,5 +84,6 @@ none.
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: Completed 16-03-PLAN.md (pytest11 plugin + board fixture + 3 example tests; 15/15 pytest 0.72s)
+Stopped at: Completed 16-05-PLAN.md (GitHub Action + release pipeline + sample repo + Phase 16 close-out); Phase 16 SHIPPED
 Resume file: none
+Next: Phase 17 plan-and-execute (release pipeline + lecerf.dev landing) OR Phase 15 (WASM + Web IDE)
