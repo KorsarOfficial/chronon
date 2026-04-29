@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 
 ## Current Position
 
-Phase: 14 (complete)
-Plan: 07 (complete — native PUSH/POP/LDM/STM + B.cond fast path; 173M IPS; 19/19 ctest; 14/14 firmware)
-Status: Phase 14 SHIPPABLE; 19/19 ctest; 14/14 firmware; 173M IPS (100M+ ROADMAP target met)
-Last activity: 2026-04-26 — 14-07 executed; PUSH/POP/LDM/STM native codegen; B.cond bit-test; ctest 18->19
+Phase: 16 (in progress)
+Plan: 01 (complete — liblecerf SHARED DLL + main.c on board API + test_lecerf_api 5 smoke tests)
+Status: Phase 16 in progress; 20/20 ctest; 14/14 firmware; liblecerf.dll built
+Last activity: 2026-04-29 — 16-01 executed; liblecerf SHARED; lecerf-smoke; test_lecerf_api; 20/20 ctest
 
 ## Performance Metrics
 
@@ -30,6 +30,7 @@ p14.04: 2 tasks, 1 file created, 2 modified, 14->15 tests, 75 min.
 p14.05: 3 tasks, 1 file created, 4 modified, 15->16 tests, 45 min.
 p14.06: 3 tasks, 2 files created, 3 modified, 17->18 tests, 90 min.
 p14.07: 5 tasks, 1 file created, 9 modified, 18->19 tests, 120 min.
+p16.01: 4 tasks, 3 files created, 2 modified, 19->20 tests, 35 min.
 
 ## Accumulated Context
 
@@ -59,6 +60,7 @@ p14.07: 5 tasks, 1 file created, 9 modified, 18->19 tests, 120 min.
 - p14.05: jit_run_chained: tight while loop (halted|total<max_steps|remaining<JIT_MAX_BLOCK_LEN|jit_run false); overshoot <=31 cycles; compile_block eviction: jit_flush+continue on n_blocks==JIT_MAX_BLOCKS (generation reset); run_steps_full_g+gdb use jit_run_chained; gdb->stepping skips chain; 16/16 ctest; firmware 11/14 (3 pre-existing failures from 14-04, not regressions)
 - p14.06: QPC timing in tools/main.c (always-on; IPS+elapsed to stderr); test_jit_bench (warmup 500K, peripheral memset, timed 5M-cap run, ASSERT elapsed<70ms, warns if >50ms); DWT O(1) batch update (cyccnt+=jit_steps); measured 57M IPS (range 47-64M, Windows jitter); ROADMAP 100M+ IPS NOT met; 18/18 ctest; 14/14 firmware; phase 14 status: almost-shippable
 - p14.07: codegen_emit gains bus_t* param for flat-SRAM optimisation; emit_push_v/emit_pop/emit_ldm_stm with flat-SRAM baked-pointer fast path (bounds check jb/ja rel8; r10=buf imm64; r11=buf+(eax-fbase)); emit_b_cond_fast: APSR byte3 direct bit-test (no pushfq/popfq); B.cond auto-fix Rule-1: jmp_short replaced with E9 rel32 when slow_body > 127; jb/ja targets pre-computed using actual jmp_sz; measured 173M IPS, 10.7ms, native=100%; bench gate <50ms; 19/19 ctest; ROADMAP 100M+ MET; phase 14 SHIPPABLE
+- p16.01: liblecerf SHARED (OUTPUT_NAME=liblecerf PREFIX="" → liblecerf.dll); tools/main.c rewritten onto board_create/flash/run/destroy; --gdb= path kept via direct board struct access; lecerf-smoke two-board isolation demo; test_lecerf_api 5 smoke tests (null-board, create+run, cpu-isolation, uart-drain, tt-isolation); FIRMWARE_DIR=../../firmware for ctest CWD=build/tests/; 20/20 ctest; 14/14 firmware
 
 ### Pending Todos
 
@@ -71,6 +73,6 @@ none.
 
 ## Session Continuity
 
-Last session: 2026-04-26
-Stopped at: Completed 14-07-PLAN.md (native PUSH/POP/LDM/STM + B.cond fast path; 173M IPS; 19/19 ctest; Phase 14 SHIPPABLE)
+Last session: 2026-04-29
+Stopped at: Completed 16-01-PLAN.md (liblecerf SHARED + main.c on board API + test_lecerf_api; 20/20 ctest)
 Resume file: none
