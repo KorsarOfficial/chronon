@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 16 (in progress)
-Plan: 01 (complete — liblecerf SHARED DLL + main.c on board API + test_lecerf_api 5 smoke tests)
-Status: Phase 16 in progress; 20/20 ctest; 14/14 firmware; liblecerf.dll built
-Last activity: 2026-04-29 — 16-01 executed; liblecerf SHARED; lecerf-smoke; test_lecerf_api; 20/20 ctest
+Plan: 02 (complete — pip-installable lecerf package; 6/6 pytest smoke; windows-smoke CI gate)
+Status: Phase 16 in progress; 20/20 ctest; 14/14 firmware; liblecerf.dll + Python wrapper
+Last activity: 2026-04-29 — 16-02 executed; setuptools wheel; ctypes bindings; Board/RunResult API; 6 smoke tests
 
 ## Performance Metrics
 
@@ -31,6 +31,7 @@ p14.05: 3 tasks, 1 file created, 4 modified, 15->16 tests, 45 min.
 p14.06: 3 tasks, 2 files created, 3 modified, 17->18 tests, 90 min.
 p14.07: 5 tasks, 1 file created, 9 modified, 18->19 tests, 120 min.
 p16.01: 4 tasks, 3 files created, 2 modified, 19->20 tests, 35 min.
+p16.02: 3 tasks, 10 files created, 2 modified, 20->26 tests (6 pytest added), 8 min.
 
 ## Accumulated Context
 
@@ -61,6 +62,7 @@ p16.01: 4 tasks, 3 files created, 2 modified, 19->20 tests, 35 min.
 - p14.06: QPC timing in tools/main.c (always-on; IPS+elapsed to stderr); test_jit_bench (warmup 500K, peripheral memset, timed 5M-cap run, ASSERT elapsed<70ms, warns if >50ms); DWT O(1) batch update (cyccnt+=jit_steps); measured 57M IPS (range 47-64M, Windows jitter); ROADMAP 100M+ IPS NOT met; 18/18 ctest; 14/14 firmware; phase 14 status: almost-shippable
 - p14.07: codegen_emit gains bus_t* param for flat-SRAM optimisation; emit_push_v/emit_pop/emit_ldm_stm with flat-SRAM baked-pointer fast path (bounds check jb/ja rel8; r10=buf imm64; r11=buf+(eax-fbase)); emit_b_cond_fast: APSR byte3 direct bit-test (no pushfq/popfq); B.cond auto-fix Rule-1: jmp_short replaced with E9 rel32 when slow_body > 127; jb/ja targets pre-computed using actual jmp_sz; measured 173M IPS, 10.7ms, native=100%; bench gate <50ms; 19/19 ctest; ROADMAP 100M+ MET; phase 14 SHIPPABLE
 - p16.01: liblecerf SHARED (OUTPUT_NAME=liblecerf PREFIX="" → liblecerf.dll); tools/main.c rewritten onto board_create/flash/run/destroy; --gdb= path kept via direct board struct access; lecerf-smoke two-board isolation demo; test_lecerf_api 5 smoke tests (null-board, create+run, cpu-isolation, uart-drain, tt-isolation); FIRMWARE_DIR=../../firmware for ctest CWD=build/tests/; 20/20 ctest; 14/14 firmware
+- p16.02: scikit-build-core rejected (MSVC cl.exe can't compile __builtin_ctz); setuptools + pre-built MinGW DLL in package_data; ctypes uses lecerf_board_* prefix (not lecerf_* from plan sketch); Board/RunResult snapshot all regs at run() time (17 ctypes calls amortized); CI uses msys2 MinGW build → MSVC Python 3.12 ctypes smoke; 6/6 pytest 0.27s; 20/20 ctest unaffected
 
 ### Pending Todos
 
@@ -74,5 +76,5 @@ none.
 ## Session Continuity
 
 Last session: 2026-04-29
-Stopped at: Completed 16-01-PLAN.md (liblecerf SHARED + main.c on board API + test_lecerf_api; 20/20 ctest)
+Stopped at: Completed 16-02-PLAN.md (Python wrapper + 6 pytest smoke + windows-smoke CI; 20/20 ctest)
 Resume file: none
